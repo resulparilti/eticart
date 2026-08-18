@@ -1,0 +1,272 @@
+📦 EtiCart - SHOPIFY & UYUMSOFT ENTEGRASYON SİSTEMİ
+🎯 CURSOR AI İLE YAPILACAK FULL-STACK PROJECT
+
+================================================================================
+📋 PROJE DOSYLARI (7 dosya, 109 KB)
+================================================================================
+
+1. 📄 README.md (11 KB) ⭐ BAŞLA BURADAN
+   └─ Tüm proje dosyalarının özeti
+   └─ Hızlı başlangıç rehberi
+   └─ 48-60 saat iş planlaması
+   └─ Başarı kontrol listesi
+
+2. 📄 01-BASLANGIC_REHBERI.md (12 KB)
+   └─ Sistem gereksinimlerini (PHP, MySQL, Redis, Node.js, Composer)
+   └─ Adım-adım kurulum talimatları
+   └─ .env configuration örnekleri
+   └─ Database setup
+   └─ Local server başlatma (3 terminal)
+   └─ Sorun giderme ipuçları
+
+3. 📄 PROJE_YOL_HARITASI.md (20 KB)
+   └─ Tüm proje özelliklerinin detaylı açıklaması
+   └─ Veritabanı şeması (14+ tablo, tüm relationships)
+   └─ Klasör yapısı (app/views/routes/config)
+   └─ Menü hiyerarşisi (10+ ana başlık)
+   └─ API entegrasyonları (Shopify, UyumSoft, 4x Kargo, Mail, SMS)
+   └─ Sinkronizasyon akışı diyagramları
+   └─ Tasarım prensipleeri (Bootstrap 5.3 minimal modern)
+   └─ Performance hedefleri
+
+4. 📄 TODO.md (26 KB) ⭐ YÖN HARITANIZ
+   └─ 13 Fase - 100+ görev
+   └─ FASE 1: Proje Kurulumu (2 saat)
+   └─ FASE 2: Admin Paneli (4 saat)
+   └─ FASE 3: Database & Models (3 saat)
+   └─ FASE 4: Shopify Entegrasyonu (6 saat)
+   └─ FASE 5: UyumSoft Entegrasyonu (6 saat)
+   └─ FASE 6: Kargo Yönetimi (8 saat)
+   └─ FASE 7: Mail & SMS (4 saat)
+   └─ FASE 8: Ayarlar Sayfası (4 saat)
+   └─ FASE 9: Kullanıcı Yönetimi (2 saat)
+   └─ FASE 10: Raporlar (2 saat)
+   └─ FASE 11: Queue & Scheduler (4 saat)
+   └─ FASE 12: Testing (3 saat)
+   └─ FASE 13: Local Dev (2 saat)
+   └─ FASE 14: Deployment (2 saat)
+   └─ Her fase için detaylı TODO'lar
+   └─ Tamamlama kontrol listesi
+
+5. 📄 .cursorrules (11 KB) ⭐ CURSOR AI KURALLAR
+   └─ Kod standartları (PSR-12)
+   └─ Blade template conventions
+   └─ Database best practices
+   └─ API integration patterns
+   └─ Security kuralları
+   └─ Performance optimization
+   └─ Logging & debugging
+   └─ Testing metodolojisi
+   └─ Deployment checklist
+
+6. 📄 CURSOR_PROMPTS.md (26 KB)
+   └─ 20+ hazır prompt template
+   └─ FASE 2-14'ün her biri için prompt
+   └─ Kopyala-yapıştır yapabileceğin format
+   └─ Hata debugging prompts
+   └─ Code review prompts
+   └─ Performance optimization prompts
+   └─ Deployment prompts
+   └─ Testing prompts
+
+7. 📄 OZET_HIZLI_REFERANS.md (14 KB)
+   └─ Proje özeti (1-sayfalık)
+   └─ Menü yapısı tablosu
+   └─ Veritabanı tablo adları
+   └─ API endpoints
+   └─ Ayarlar sayfası detayları
+   └─ Fase timeline'ı
+   └─ Sinkronizasyon akışı
+   └─ Hızlı komutlar (bash)
+   └─ Sık sorulan sorular
+   └─ Başlama kontrol listesi
+
+================================================================================
+🎯 PROJE ÖZETI
+================================================================================
+
+Proje Adı:    EtiCart - E-ticaret Entegrasyon Paneli
+Framework:    Laravel 11 + PHP 8.2+
+Database:     MySQL 8.0+
+Cache/Queue:  Redis 7.0+
+Frontend:     Blade + Bootstrap 5.3 (Minimal Modern)
+API'ler:      Shopify, UyumSoft, Kargo (4x), Mail, SMS
+Tasarım:      Responsive, Dark/Light mode ready
+Güvenlik:     Laravel Auth, CSRF, XSS protection, Rate limiting
+Performance:  < 2 saniye page load, Redis caching, Optimization
+
+Geliştirme:   Cursor AI ile (full-stack automatic coding)
+Süresi:       40-50 saat coding (1 hafta intensive)
+Local Test:   Windows/Mac/Linux
+Deploy:       VPS/Dedicated server ready
+Code Quality: Laravel Best Practices, PSR-12
+
+================================================================================
+📦 IÇERIĞI NELER?
+================================================================================
+
+✅ Dashboard
+   - Real-time senkronizasyon durumu
+   - Quick stats (4x card)
+   - Son 5 sipariş
+   - Sistem sağlığı
+
+✅ Sipariş Yönetimi
+   - Shopify siparişleri senkronizasyonu
+   - Durum filtreleme
+   - Sipariş detayları
+   - Kargo atama
+   - Müşteri mesajı
+
+✅ Ürün Yönetimi
+   - UyumSoft ürün import
+   - Varyant yönetimi
+   - Toplu senkronizasyon
+   - Fiyat/Stok güncelleme
+
+✅ Kargo Yönetimi
+   - 4 kargo firması (Aras, MNG, Yurtiçi, PTT)
+   - Otomatik etiket oluşturma
+   - Fatura yazdırma
+   - Tracking entegrasyonu
+
+✅ Ayarlar
+   - Shopify bağlantı
+   - UyumSoft bağlantı
+   - Kargo firmaları
+   - Mail (SMTP)
+   - SMS sağlayıcı
+   - Sinkronizasyon zamanları
+   - Email/SMS şablonları
+
+✅ Admin Panel
+   - Kullanıcı yönetimi
+   - Role-based access
+   - Raporlar (satış, sinkronizasyon)
+   - Sistem logları
+
+================================================================================
+🚀 NASIL BAŞLANIR?
+================================================================================
+
+ADIM 1: README.md'yi oku (10 dakika)
+   → Tüm dosyaların ne olduğunu öğren
+
+ADIM 2: 01-BASLANGIC_REHBERI.md'yi takip et (2 saat)
+   → Sistem kurul
+   → Database oluştur
+   → Local server başlat
+   → ✅ http://localhost:8000 açılıyor
+
+ADIM 3: Proje Yapısını Anla (1 saat)
+   → PROJE_YOL_HARITASI.md
+   → OZET_HIZLI_REFERANS.md
+   → TODO.md'nin başını oku
+
+ADIM 4: Cursor'ü Aç ve Başla (40-50 saat)
+   → CURSOR_PROMPTS.md'den hazır prompt kopyala
+   → Cursor chat'te yapıştır
+   → Cursor otomatikmen kod yazıyor
+   → Local'de test et
+   → Bir fase bittiğinde bir sonrakine geç
+
+ADIM 5: Bittiğinde Production'a Deploy (2 saat)
+   → VPS/Dedicated server
+   → Nginx + PHP-FPM
+   → MySQL + Redis
+   → SSL certificate (Let's Encrypt)
+
+================================================================================
+⏱️ ZAMAN PLANI (7 GÜN)
+================================================================================
+
+Gün 1: Kurulum
+   - Sistemleri yükle (2 saat)
+   - Database setup (30 dakika)
+   - Local test (30 dakika)
+
+Gün 2: Planlama & Başlama
+   - Dosyaları oku (1 saat)
+   - Cursor kurulum (30 dakika)
+   - FASE 1-2 başlat (1 saat)
+
+Gün 3: Admin UI & Database
+   - FASE 2 tamamla: Dashboard (4 saat)
+   - FASE 3 tamamla: Models (3 saat)
+
+Gün 4: Shopify & UyumSoft
+   - FASE 4: Shopify entegre (6 saat)
+   - FASE 5 başlat: UyumSoft (3 saat)
+
+Gün 5: Kargo & Mesajlaşma
+   - FASE 5 bitir: UyumSoft (3 saat)
+   - FASE 6: Kargo yönetimi (5 saat)
+
+Gün 6: Ayarlar & Queue
+   - FASE 7: Mail & SMS (4 saat)
+   - FASE 8: Ayarlar sayfası (4 saat)
+
+Gün 7: Final & Deploy
+   - FASE 9-11: Users, Reports, Queue (8 saat)
+   - FASE 12-14: Testing & Deployment (4 saat)
+
+===============================================================================
+📞 KURALLARI & EN İYİ PRACTICES
+================================================================================
+
+Cursor AI Kuralları:      .cursorrules dosyasında
+Code Standards:           Laravel PSR-12, Blade conventions
+Database:                 Eloquent ORM, migrations, relationships
+Security:                 Auth, CSRF, XSS, SQL injection protection
+Performance:              Query optimization, caching, indexing
+Testing:                  Unit tests, feature tests, local test
+Deployment:               Production checklist, backup strategy
+
+================================================================================
+🎯 BAŞARILI OLUNCA
+================================================================================
+
+✅ Tüm siparişler senkronize ediliyor
+✅ Ürünler UyumSoft'tan Shopify'a aktarılıyor
+✅ Stok otomatik güncelleniyor
+✅ Kargo oluşturma, etiket, fatura yazdırma çalışıyor
+✅ Email & SMS gönderimi başarılı
+✅ Dashboard real-time bilgi gösteriyor
+✅ Ayarlar sayfasından tüm konfigürasyon yapılabiliyor
+✅ Kullanıcı yönetimi aktif
+✅ Raporlar çalışıyor
+✅ Local test sunucuda stabil
+✅ Production ready
+
+================================================================================
+📌 ÖNEMLİ NOTLAR
+================================================================================
+
+✓ Hiçbir ön bilgi gerekmiyor
+✓ Cursor otomatikmen kod yazıyor
+✓ Adım-adım rehber var
+✓ Hata debuggin rehberi var
+✓ Local + Production ready
+✓ Tüm entegrasyonlar kurulu
+✓ Best practices'e uygun
+✓ Ölçeklenebilir ve bakımı kolay
+
+================================================================================
+🎉 HAZIRSAN BAŞLA!
+================================================================================
+
+1. README.md aç
+2. 01-BASLANGIC_REHBERI.md takip et
+3. Local server başlat
+4. Cursor aç
+5. CURSOR_PROMPTS.md'den prompt kopyala
+6. Kodlamaya başla! 🚀
+
+Başarılar! 
+
+Toplam Dosya Boyutu: 109 KB
+Toplam Satır Sayısı: ~6000+ satır
+Toplam Görev Sayısı: 100+ görev
+Toplam Tahmini Zaman: 48-60 saat
+
+===============================================================================

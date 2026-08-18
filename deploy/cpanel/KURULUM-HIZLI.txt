@@ -1,0 +1,14 @@
+# EtiCart — cPanel (ZIP aç + setup)
+
+1. ZIP Extract (Laravel kökü, vendor dahil)
+2. Document Root = `.../public`
+3. MySQL oluştur + SQL yedeğini import et
+4. `https://domain/fix-permissions.php?run=1`
+5. `https://domain/setup.php`
+   - Yedek yüklendi: işaretli
+   - APP_KEY: eski .env satırı
+   - Shopify/API formu yok (veritabanından gelir)
+6. Cron 15 dk (ekrandaki komut)
+7. setup.php ve fix-permissions.php silin
+
+Sorun: clear-cache.php?run=1  /  health.php

@@ -1,0 +1,987 @@
+@import 'bootstrap/dist/css/bootstrap.min.css';
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+
+/* ------------------------------------------------------------------ */
+/* Light theme (only)                                                   */
+/* ------------------------------------------------------------------ */
+:root,
+[data-bs-theme='light'] {
+    --bs-primary: #0f2a3d;
+    --bs-primary-rgb: 15, 42, 61;
+    --bs-secondary: #e4572e;
+    --bs-secondary-rgb: 228, 87, 46;
+    --bs-success: #1f9d63;
+    --bs-success-rgb: 31, 157, 99;
+    --bs-danger: #d64545;
+    --bs-danger-rgb: 214, 69, 69;
+    --bs-warning: #e6a23c;
+    --bs-warning-rgb: 230, 162, 60;
+    --bs-info: #2a8fbf;
+    --bs-info-rgb: 42, 143, 191;
+    --bs-light: #eef3f7;
+    --bs-light-rgb: 238, 243, 247;
+    --bs-dark: #0b1c28;
+    --bs-dark-rgb: 11, 28, 40;
+
+    --bs-body-bg: #f3f6f9;
+    --bs-body-bg-rgb: 243, 246, 249;
+    --bs-body-color: #142433;
+    --bs-body-color-rgb: 20, 36, 51;
+    --bs-emphasis-color: #0f2a3d;
+    --bs-secondary-color: rgba(20, 36, 51, 0.65);
+    --bs-secondary-bg: #e8eef4;
+    --bs-tertiary-bg: #eef3f7;
+    --bs-border-color: #d9e2ec;
+    --bs-border-color-translucent: rgba(15, 42, 61, 0.1);
+
+    --bs-link-color: #0f2a3d;
+    --bs-link-hover-color: #e4572e;
+    --bs-heading-color: #0f2a3d;
+    --bs-code-color: #c7254e;
+
+    --bs-border-radius: 0.85rem;
+    --bs-font-sans-serif: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+
+    color-scheme: light;
+
+    --eticart-sidebar-width: 268px;
+    --eticart-navbar-height: 64px;
+    --eticart-surface: #ffffff;
+    --eticart-surface-solid: #ffffff;
+    --eticart-border: #d9e2ec;
+    --eticart-muted: #6b7c8f;
+    --eticart-accent: #e4572e;
+    --eticart-accent-soft: rgba(228, 87, 46, 0.12);
+    --eticart-shadow: 0 8px 24px rgba(15, 42, 61, 0.06);
+    --eticart-glow: none;
+    --eticart-sidebar-bg: #ffffff;
+    --eticart-sidebar-border: #e5ebf2;
+    --eticart-sidebar-brand: #0f2a3d;
+    --eticart-sidebar-brand-accent: #e4572e;
+    --eticart-sidebar-brand-border: #e5ebf2;
+    --eticart-nav-color: #3a5166;
+    --eticart-nav-hover-bg: rgba(15, 42, 61, 0.05);
+    --eticart-nav-hover-color: #0f2a3d;
+    --eticart-sidebar-shadow: 1px 0 0 #e5ebf2;
+    --eticart-input-bg: #ffffff;
+    --eticart-input-border: #cfd9e4;
+    --eticart-table-stripe: rgba(15, 42, 61, 0.03);
+    --eticart-footer-bg: transparent;
+}
+
+html {
+    scroll-behavior: smooth;
+    background-color: var(--bs-body-bg);
+}
+
+body {
+    font-family: var(--bs-font-sans-serif);
+    background-color: var(--bs-body-bg) !important;
+    background-image: none;
+    color: var(--bs-body-color);
+    min-height: 100vh;
+    letter-spacing: -0.01em;
+}
+
+h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
+    letter-spacing: -0.03em;
+    font-weight: 700;
+    color: var(--bs-heading-color);
+}
+
+.btn {
+    border-radius: 0.75rem;
+    font-weight: 600;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn-primary {
+    --bs-btn-bg: #0f2a3d;
+    --bs-btn-border-color: #0f2a3d;
+    --bs-btn-hover-bg: #17384f;
+    --bs-btn-hover-border-color: #17384f;
+    --bs-btn-active-bg: #0b1f2e;
+    --bs-btn-active-border-color: #0b1f2e;
+    --bs-btn-color: #fff;
+    --bs-btn-hover-color: #fff;
+}
+
+.btn-secondary {
+    --bs-btn-bg: var(--eticart-accent);
+    --bs-btn-border-color: var(--eticart-accent);
+    --bs-btn-hover-bg: #cf4822;
+    --bs-btn-hover-border-color: #cf4822;
+    --bs-btn-color: #fff;
+    --bs-btn-hover-color: #fff;
+}
+
+.form-control,
+.form-select,
+.input-group-text {
+    border-radius: 0.75rem;
+    border-color: var(--eticart-input-border);
+    background-color: var(--eticart-input-bg);
+    color: var(--bs-body-color);
+}
+
+.form-control::placeholder {
+    color: var(--eticart-muted);
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: rgba(228, 87, 46, 0.55);
+    box-shadow: 0 0 0 0.2rem var(--eticart-accent-soft);
+    background-color: var(--eticart-input-bg);
+    color: var(--bs-body-color);
+}
+
+.nav-tabs {
+    border-bottom-color: var(--eticart-border);
+}
+
+.nav-tabs .nav-link {
+    color: var(--eticart-muted);
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--bs-body-color);
+    background-color: var(--eticart-surface);
+    border-color: var(--eticart-border) var(--eticart-border) var(--eticart-surface);
+}
+
+.dropdown-menu {
+    background-color: var(--eticart-surface-solid);
+    border-color: var(--eticart-border);
+}
+
+.dropdown-item {
+    color: var(--bs-body-color);
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+}
+
+.modal-content {
+    background-color: var(--eticart-surface-solid);
+    color: var(--bs-body-color);
+    border-color: var(--eticart-border);
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--eticart-border);
+}
+
+.card,
+.list-group-item {
+    background-color: var(--eticart-surface-solid);
+    color: var(--bs-body-color);
+    border-color: var(--eticart-border);
+}
+
+.alert {
+    border-radius: 0.85rem;
+}
+
+.text-secondary-brand {
+    color: var(--eticart-accent) !important;
+}
+
+.bg-primary-brand {
+    background-color: #0f2a3d !important;
+}
+
+.eticart-shell {
+    min-height: 100vh;
+    background-color: var(--bs-body-bg);
+}
+
+.eticart-sidebar {
+    width: var(--eticart-sidebar-width);
+    background: var(--eticart-sidebar-bg);
+    border-right: 1px solid var(--eticart-sidebar-border);
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 1030;
+    overflow-y: auto;
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: var(--eticart-sidebar-shadow);
+}
+
+.eticart-sidebar__brand {
+    height: var(--eticart-navbar-height);
+    display: flex;
+    align-items: center;
+    padding: 0 1.35rem;
+    border-bottom: 1px solid var(--eticart-sidebar-brand-border);
+    font-weight: 800;
+    font-size: 1.25rem;
+    color: var(--eticart-sidebar-brand);
+    text-decoration: none;
+    letter-spacing: -0.04em;
+}
+
+.eticart-sidebar__brand span {
+    color: var(--eticart-sidebar-brand-accent);
+}
+
+.eticart-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 0.2rem 0.85rem;
+    padding: 0.72rem 0.95rem;
+    color: var(--eticart-nav-color);
+    text-decoration: none;
+    border-radius: 0.8rem;
+    border-left: 0;
+    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.eticart-nav-link i {
+    font-size: 1.05rem;
+    opacity: 0.9;
+}
+
+.eticart-nav-link:hover {
+    background-color: var(--eticart-nav-hover-bg);
+    color: var(--eticart-nav-hover-color);
+    transform: translateX(2px);
+}
+
+.eticart-nav-link.is-active {
+    background: linear-gradient(135deg, rgba(228, 87, 46, 0.95), rgba(255, 122, 85, 0.85));
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(228, 87, 46, 0.28);
+}
+
+.eticart-main {
+    margin-left: var(--eticart-sidebar-width);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bs-body-bg);
+}
+
+.eticart-navbar {
+    height: var(--eticart-navbar-height);
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+    background: var(--eticart-surface);
+    border-bottom: 1px solid var(--eticart-border);
+}
+
+.eticart-global-search {
+    position: relative;
+    max-width: 460px;
+}
+
+.eticart-global-search__field {
+    max-width: 460px;
+}
+
+.eticart-global-search__dropdown {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    right: 0;
+    max-height: min(70vh, 420px);
+    overflow: auto;
+    background: #fff;
+    border: 1px solid var(--eticart-border);
+    border-radius: 0.75rem;
+    box-shadow: 0 16px 36px rgba(15, 42, 61, 0.14);
+    z-index: 1040;
+}
+
+.eticart-global-search__hint {
+    padding: 0.85rem 1rem;
+    color: var(--eticart-muted, #6c757d);
+    font-size: 0.875rem;
+}
+
+.eticart-global-search__group + .eticart-global-search__group {
+    border-top: 1px solid var(--eticart-border);
+}
+
+.eticart-global-search__group-label {
+    padding: 0.55rem 1rem 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--eticart-muted, #6c757d);
+}
+
+.eticart-global-search__item {
+    display: block;
+    padding: 0.55rem 1rem;
+    text-decoration: none;
+    color: inherit;
+}
+
+.eticart-global-search__item:hover {
+    background: var(--bs-tertiary-bg);
+}
+
+.eticart-server-clock {
+    text-align: right;
+    line-height: 1.15;
+    min-width: 7.5rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 0.55rem;
+    background: #111;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+}
+
+@media (max-width: 575.98px) {
+    .eticart-server-clock {
+        display: none;
+    }
+}
+
+.eticart-server-clock__date {
+    font-size: 0.68rem;
+    opacity: 0.78;
+    white-space: nowrap;
+}
+
+.eticart-server-clock__time {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.eticart-content {
+    padding: 1.75rem;
+    flex: 1;
+    background-color: var(--bs-body-bg);
+    animation: eticart-fade-up 0.35s ease forwards;
+}
+
+@keyframes eticart-fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.eticart-card,
+.eticart-stat-card {
+    background: var(--eticart-surface);
+    border: 1px solid var(--eticart-border);
+    border-radius: 1rem;
+    box-shadow: var(--eticart-shadow);
+    color: var(--bs-body-color);
+    transition: box-shadow 0.2s ease;
+}
+
+.eticart-stat-card {
+    padding: 1.35rem;
+    height: 100%;
+}
+
+.eticart-stat-card:hover,
+.eticart-card:hover {
+    box-shadow: 0 14px 32px rgba(15, 42, 61, 0.1);
+}
+
+.eticart-stat-card__icon {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    background: var(--eticart-accent-soft);
+    color: var(--eticart-accent);
+}
+
+.eticart-muted {
+    color: var(--eticart-muted) !important;
+}
+
+.eticart-toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1090;
+}
+
+.eticart-shell > .eticart-main > footer {
+    background: var(--eticart-footer-bg);
+    border-color: var(--eticart-border) !important;
+}
+
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--bs-body-color);
+    --bs-table-border-color: var(--eticart-border);
+    --bs-table-striped-bg: var(--eticart-table-stripe);
+    --bs-table-hover-bg: var(--eticart-table-stripe);
+    color: var(--bs-body-color);
+}
+
+.table > :not(caption) > * > * {
+    background-color: transparent;
+    color: inherit;
+    border-bottom-color: var(--eticart-border);
+}
+
+.bg-body-tertiary {
+    background-color: var(--bs-tertiary-bg) !important;
+}
+
+.border,
+.border-top,
+.border-bottom,
+.border-start,
+.border-end {
+    border-color: var(--eticart-border) !important;
+}
+
+code {
+    color: var(--bs-code-color);
+}
+
+/* Auth screens stay branded (independent of app theme) */
+.auth-wrap {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(900px 420px at 15% 10%, rgba(228, 87, 46, 0.28), transparent 55%),
+        linear-gradient(145deg, #0f2a3d 0%, #16384f 55%, #0a141d 100%);
+    padding: 1.5rem;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 420px;
+    background: #ffffff;
+    color: #142433;
+    border-radius: 1.25rem;
+    padding: 2.1rem;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+    animation: eticart-fade-up 0.45s ease both;
+}
+
+.auth-card .eticart-muted {
+    color: #6b7c8f !important;
+}
+
+.auth-card__brand {
+    font-size: 1.65rem;
+    font-weight: 800;
+    color: #0f2a3d;
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.04em;
+}
+
+.auth-card__brand span {
+    color: #e4572e;
+}
+
+@media (max-width: 991.98px) {
+    .eticart-sidebar {
+        transform: translateX(-100%);
+    }
+
+    .eticart-sidebar.is-open {
+        transform: translateX(0);
+    }
+
+    .eticart-main {
+        margin-left: 0;
+    }
+
+    .eticart-sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 1025;
+    }
+
+    .eticart-sidebar-backdrop.is-visible {
+        display: block;
+    }
+}
+
+.eticart-sync-monitor {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 1080;
+}
+
+.eticart-sync-fab-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.eticart-scroll-top {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 999px;
+    background: #111;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.eticart-scroll-top:hover {
+    transform: translateY(-2px);
+    opacity: 0.92;
+}
+
+.eticart-sync-fab {
+    position: relative;
+    width: 52px;
+    height: 52px;
+    border: 0;
+    border-radius: 999px;
+    background: #111;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.eticart-sync-fab:hover,
+.eticart-sync-fab.is-active {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.eticart-sync-fab.has-running {
+    background: #dc3545;
+    color: #fff;
+}
+
+.eticart-sync-fab.has-error {
+    background: #111;
+    color: #ffb4b4;
+}
+
+.eticart-sync-fab__badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: #fff;
+    color: #dc3545;
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.eticart-spin {
+    display: inline-block;
+    animation: eticart-spin 1s linear infinite;
+}
+
+@keyframes eticart-spin {
+    to { transform: rotate(360deg); }
+}
+
+.eticart-sync-panel {
+    position: absolute;
+    right: 0;
+    bottom: 4.75rem;
+    width: min(420px, calc(100vw - 2rem));
+    max-height: min(78vh, 640px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 16px 40px rgba(15, 42, 61, 0.14);
+}
+
+.eticart-sync-panel__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid var(--eticart-border);
+}
+
+.eticart-sync-panel__list {
+    max-height: 200px;
+    overflow: auto;
+    border-bottom: 1px solid var(--eticart-border);
+    flex-shrink: 0;
+}
+
+.eticart-sync-item {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    border-bottom: 1px solid var(--eticart-border);
+    background: transparent;
+}
+
+.eticart-sync-item__main {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 0.75rem 0.35rem 0.75rem 1rem;
+    color: inherit;
+}
+
+.eticart-sync-item__dismiss {
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    margin: 0.7rem 0.75rem 0 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #198754;
+    font-size: 1.15rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.85;
+}
+
+.eticart-sync-item__dismiss:hover {
+    color: #146c43;
+    opacity: 1;
+    background: transparent;
+}
+
+.eticart-sync-item__dismiss:disabled {
+    opacity: 0.45;
+}
+
+.eticart-sync-item:hover,
+.eticart-sync-item.is-selected {
+    background: var(--bs-tertiary-bg);
+}
+
+.eticart-sync-panel__logs {
+    flex: 1 1 auto;
+    min-height: 260px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.eticart-sync-panel__logs-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--eticart-border);
+    background: var(--bs-tertiary-bg);
+}
+
+.eticart-sync-panel__foot {
+    padding: 0.65rem 1rem;
+    border-top: 1px solid var(--eticart-border);
+    background: var(--bs-tertiary-bg);
+}
+
+.eticart-sync-log-stream {
+    flex: 1;
+    min-height: 200px;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: #0b1c28;
+    color: #d7e3ef;
+}
+
+.eticart-sync-log {
+    display: grid;
+    grid-template-columns: 54px 64px 1fr;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.eticart-sync-log__level {
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.eticart-sync-log.is-error .eticart-sync-log__level,
+.eticart-sync-log.is-error .eticart-sync-log__msg { color: #ff8f8f; }
+.eticart-sync-log.is-warning .eticart-sync-log__level,
+.eticart-sync-log.is-warning .eticart-sync-log__msg { color: #ffd089; }
+.eticart-sync-log.is-success .eticart-sync-log__level,
+.eticart-sync-log.is-success .eticart-sync-log__msg { color: #8dffb5; }
+.eticart-sync-log.is-info .eticart-sync-log__level { color: #8ec8ff; }
+
+.eticart-workspace-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: var(--eticart-surface);
+    border: 1px solid var(--eticart-border);
+    border-radius: 0.85rem;
+    box-shadow: var(--eticart-shadow);
+}
+
+.eticart-workspace-card.is-done {
+    opacity: 0.72;
+}
+
+.eticart-rich-editor__surface {
+    min-height: 140px;
+}
+
+.eticart-kanban__board {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    align-items: flex-start;
+}
+
+.eticart-kanban__column {
+    flex: 0 0 280px;
+    max-width: 280px;
+    padding: 0.85rem;
+    min-height: 320px;
+}
+
+.eticart-kanban__column:hover {
+    transform: none;
+}
+
+/* Bootstrap modal: backdrop altında, panel üstte (sync monitor üstünde) */
+.modal-backdrop {
+    z-index: 1090;
+}
+
+.modal {
+    z-index: 1095;
+}
+
+.eticart-kanban__column-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.eticart-kanban__dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.eticart-kanban__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    min-height: 48px;
+}
+
+.eticart-kanban__card {
+    background: #fff;
+    border: 1px solid var(--eticart-border);
+    border-radius: 0.65rem;
+    padding: 0.7rem 0.75rem;
+    cursor: grab;
+}
+
+.eticart-kanban__card.is-dragging {
+    opacity: 0.55;
+}
+
+.eticart-kanban__card-title {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-weight: 600;
+    color: inherit;
+}
+
+.eticart-calendar__weekdays,
+.eticart-calendar__month {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.eticart-calendar__weekdays > div {
+    padding: 0.55rem 0.35rem;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--eticart-muted, #6c757d);
+    border-bottom: 1px solid var(--eticart-border);
+}
+
+.eticart-calendar__day {
+    min-height: 110px;
+    border-right: 1px solid var(--eticart-border);
+    border-bottom: 1px solid var(--eticart-border);
+    padding: 0.35rem;
+}
+
+.eticart-calendar__day.is-muted {
+    background: rgba(0, 0, 0, 0.02);
+    color: #98a2b3;
+}
+
+.eticart-calendar__day.is-today {
+    background: rgba(13, 110, 253, 0.06);
+}
+
+.eticart-calendar__day-num {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.eticart-calendar__event {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 0.35rem;
+    color: #fff;
+    font-size: 0.68rem;
+    text-align: left;
+    padding: 0.15rem 0.3rem;
+    margin-bottom: 0.2rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.eticart-calendar__more {
+    border: 0;
+    background: transparent;
+    color: var(--eticart-muted, #6c757d);
+    font-size: 0.7rem;
+    padding: 0;
+}
+
+.eticart-calendar__list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--eticart-border);
+    border-radius: 0.65rem;
+    background: #fff;
+    padding: 0.7rem 0.85rem;
+}
+
+.eticart-calendar__dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 992px) {
+    .eticart-server-clock__date {
+        display: none;
+    }
+
+    .eticart-calendar__day {
+        min-height: 84px;
+    }
+}
+
+[x-cloak] { display: none !important; }
+
+@media (max-width: 576px) {
+    .eticart-sync-monitor {
+        right: 0.75rem;
+        bottom: 0.75rem;
+    }
+
+    .eticart-sync-panel {
+        width: calc(100vw - 1.5rem);
+        max-height: 75vh;
+    }
+}
+
+@media print {
+    .eticart-sidebar,
+    .eticart-navbar,
+    .no-print {
+        display: none !important;
+    }
+
+    .eticart-main {
+        margin-left: 0 !important;
+    }
+
+    .eticart-content {
+        padding: 0 !important;
+        animation: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+.cargo-provider-logo {
+    display: inline-block;
+    max-width: 110px;
+    height: 24px;
+    object-fit: contain;
+    vertical-align: middle;
+    border-radius: 4px;
+    background: transparent;
+}

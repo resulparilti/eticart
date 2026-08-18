@@ -1,0 +1,50 @@
+================================================================================
+  EtiCart — cPanel Paketi (izin 755, vendor + build dahil)
+================================================================================
+
+SİZİN İŞİNİZ (sırayla)
+----------------------
+1) ZIP'i cPanel File Manager ile Laravel köküne yükleyip Extract edin
+   (örnek: /home/KULLANICI/eticart)
+
+2) cPanel → Domains → Document Root = .../eticart/public
+
+3) cPanel → MySQL: veritabanı + kullanıcı oluşturun
+   phpMyAdmin ile SQL YEDEĞİNİZİ import edin
+   (Shopify / UyumSoft / kargo ayarları buradan gelir)
+
+4) Tarayıcı:
+   https://panel.alanadiniz.com/fix-permissions.php?run=1
+
+5) Tarayıcı:
+   https://panel.alanadiniz.com/setup.php
+   - "Veritabanı yedeğini yükledim" işaretli kalsın
+   - Site adresi, MySQL bilgileri
+   - Eski .env içindeki APP_KEY (kargo şifreleri için)
+   - Yönetici alanlarını BOŞ bırakın (eski hesapla giriş)
+
+6) cPanel Cron Jobs — her 15 dakika:
+   (setup bitince ekrandaki komutu kopyalayın)
+
+7) İş bitince File Manager'dan silin:
+   public/setup.php
+   public/fix-permissions.php
+   public/install-workspace.php
+
+
+YARDIMCI SAYFALAR
+-----------------
+fix-permissions.php  → klasör/dosya izin 755
+clear-cache.php      → cache sil + yeni migration
+health.php           → teşhis
+cron-status.php      → cron çalıştı mı?
+
+
+SORUN
+-----
+Permission denied → fix-permissions.php?run=1
+500 / login       → clear-cache.php?run=1  ve  health.php
+Kargo API çalışmıyor → setup'ta eski APP_KEY yapıştırılmadıysa
+                       panelden kargo şifrelerini yeniden kaydedin
+
+================================================================================

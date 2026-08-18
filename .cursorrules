@@ -1,0 +1,559 @@
+# 🤖 EtiCart - Cursor AI Rules
+# Shopify & UyumSoft Entegrasyon Sistemi için Cursor Kuralları
+
+## 🎯 PROJE KONFERENSI
+
+- **Proje Adı:** EtiCart - E-ticaret Entegrasyon Sistemi
+- **Framework:** Laravel 11 (PHP 8.2+)
+- **Database:** MySQL 8.0+
+- **Cache/Queue:** Redis 7.0+
+- **Frontend:** Blade Templates + Bootstrap 5.3
+- **Tasarım:** Minimal Modern, Dark/Light theme
+- **Hedef:** Shopify, UyumSoft, Kargo, Mail/SMS senkronizasyonu
+
+---
+
+## 📋 GENEL KURALLAR
+
+### Code Standartları
+
+1. **PHP Kodu:**
+   - PSR-12 standartlarına uyun
+   - Type hints kullan (strict types)
+   - Docblocks yazıl (PHPDoc)
+   - Single responsibility principle
+   - Dependency injection kullan
+
+2. **Blade Templates:**
+   - Bootstrap 5.3 grid sistemi kullan
+   - Minimal CSS, DRY prensibi
+   - Component-based yapı (@component)
+   - Alpine.js minimal olarak (sadece gerekli yerler)
+   - Erişilebilir HTML (WCAG 2.1 AA)
+
+3. **Database:**
+   - Eloquent ORM kullan, raw queries yazma
+   - Model relationships tanımla
+   - Soft deletes kullan (uygun yerlerde)
+   - Migration dosyaları clear ve dokumente olsun
+   - Indexing performans için optimize et
+
+4. **API İntegrasyonları:**
+   - Service classes kullan
+   - Error handling ve retry logic
+   - Rate limiting göz önünde bulundur
+   - Credential'ları .env'de sakla
+   - API responses'ı log tutumda
+
+5. **Security:**
+   - SQL injection: Eloquent ile otomatik
+   - XSS: Blade {{ }} escaping
+   - CSRF: @csrf token
+   - Authentication: Laravel auth()
+   - Authorization: Gates & Policies
+   - API Keys: Encrypted storage
+   - Input validation: Form requests
+
+6. **Performance:**
+   - Eager loading (with()) kullan
+   - N+1 queries sorunundan kaçın
+   - Pagination kullan (listeler için)
+   - Redis caching critical data için
+   - Lazy loading images
+   - Asset minification
+   - Database indexes optimize et
+
+---
+
+## 📂 KLASÖR & DOSYA OLUŞTURMA
+
+### Yeni Model Oluştururken:
+```bash
+php artisan make:model ModelName -m -c -r
+```
+- Migration otomatik oluşsun
+- Controller resource'lu olsun
+- Model Events'li olsun
+
+### Yeni Service Oluştururken:
+```
+app/Services/ServiceName.php
+- Tanımlanmış interface'ler
+- Public methods dokumente olsun
+- Exception handling
+- Type hints
+```
+
+### Yeni Command Oluştururken:
+```
+app/Console/Commands/CommandName.php
+- Signature clear olsun (komut adı)
+- Description tanımlanmış olsun
+- Exit codes (0: success, 1: error)
+```
+
+---
+
+## 🔌 API ENTEGRASYONLARı İÇİN
+
+### Shopify
+```php
+app/Services/ShopifyService.php
+
+Methodlar:
+- getOrders($limit, $status)
+- getOrderDetails($orderId)
+- createProduct($data)
+- updateProduct($productId, $data)
+- updateInventory($variantId, $quantity)
+- fulfillOrder($orderId, $lineItems)
+
+Error Handling:
+- Shopify rate limiting (429)
+- Network errors retry
+- Invalid token handling
+```
+
+### UyumSoft
+```php
+app/Services/UyumSoftService.php
+
+Methodlar:
+- getProducts($limit, $offset)
+- getProductDetails($productId)
+- getStocks()
+- getInvoices($dateFrom, $dateTo)
+- syncProduct($productData)
+
+Error Handling:
+- Auth failures
+- API timeout
+- Invalid credentials
+```
+
+### Kargo Firmaları
+```php
+app/Services/CargoService.php
+
+Methodlar:
+- createShipment($orderData, $cargoCompany)
+- getTrackingInfo($trackingNumber)
+- generateLabel($shipmentId)
+- generateInvoice($shipmentId)
+- getAvailableCompanies()
+
+Her firma için ayrı class:
+- Aras Kargo
+- MNG Kargo
+- Yurtiçi Kargo
+- PTT
+```
+
+### Mail & SMS
+```php
+app/Services/MailService.php
+app/Services/SmsService.php
+
+Methodlar:
+- sendOrderConfirmation($order)
+- sendShipmentNotification($shipment)
+- sendCustomMessage($recipient, $template, $data)
+```
+
+---
+
+## 🎨 FRONTEND KURALLAR
+
+### Blade Components
+```
+resources/views/components/
+├── navbar.blade.php
+├── sidebar.blade.php
+├── table.blade.php
+├── form.blade.php
+├── alert.blade.php
+├── modal.blade.php
+└── badge.blade.php
+```
+
+### CSS
+```
+resources/css/app.css
+- Bootstrap 5.3 import
+- Custom variables (renkler, font-size)
+- Minimal custom CSS
+- BEM naming convention
+- Dark mode CSS variables
+```
+
+### JavaScript
+```
+resources/js/app.js
+- Alpine.js minimal usage
+- Event listeners
+- Form validation
+- AJAX requests
+- No jQuery kullanma
+```
+
+### Template Structure
+```blade
+@extends('layouts.app')
+
+@section('title', 'Sayfanın Başlığı')
+
+@section('content')
+<div class="container mt-5">
+    <div class="row">
+        <!-- Content -->
+    </div>
+</div>
+@endsection
+```
+
+---
+
+## 🔄 SİNKRONİZASYON KURALLAR
+
+### Job Classes
+```php
+app/Jobs/SyncShopifyOrders.php
+- Handles queue gözlemlensin
+- Timeout set edilsin
+- Retry logic
+- Failed job handling
+- Job progress log
+```
+
+### Schedule (Kernel.php)
+```php
+// Her 1-5 dakikada bir kontrol
+$schedule->job(new SyncShopifyOrders)
+    ->everyMinute()
+    ->withoutOverlapping();
+
+// Her 30 dakikada bir
+$schedule->job(new SyncUyumSoftProducts)
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
+
+// Her 10 dakikada bir
+$schedule->job(new SyncStock)
+    ->everyTenMinutes()
+    ->withoutOverlapping();
+```
+
+---
+
+## 📊 VERITABANI KURALLAR
+
+### Migration Kuralları
+```php
+Schema::create('table_name', function (Blueprint $table) {
+    $table->id();
+    // Komut yazarken 'db:' prefix var mı kontrol et
+    $table->string('column')->nullable();
+    $table->index('column'); // Sık sorgulanan alanlar
+    $table->foreignId('related_id')->constrained();
+    $table->softDeletes(); // Gerekli ise
+    $table->timestamps();
+});
+```
+
+### Model Kuralları
+```php
+class Model extends Model {
+    use SoftDeletes; // Gerekirse
+    
+    protected $fillable = []; // Explicit
+    protected $hidden = []; // Sensitif veri
+    protected $casts = []; // Type casting
+    
+    // Relationships
+    public function relatedModel() {
+        return $this->hasMany(RelatedModel::class);
+    }
+}
+```
+
+---
+
+## 🔐 GÜVENLİK KONTROL LİSTESİ
+
+### Her Entegrasyon İçin:
+- [ ] API credentials .env'de
+- [ ] Input validation yapılıyor
+- [ ] Rate limiting var
+- [ ] Error logging yapılıyor
+- [ ] Sensitive data encrypted
+- [ ] HTTPS enforced (production)
+- [ ] CORS properly configured
+- [ ] SQL injection protection
+- [ ] XSS protection
+- [ ] CSRF protection
+
+---
+
+## ⚡ PERFORMANS KONTROL LİSTESİ
+
+- [ ] N+1 queries test edildi
+- [ ] Pagination implemented
+- [ ] Caching strategy var
+- [ ] Database indexes optimized
+- [ ] Asset minification enabled
+- [ ] Lazy loading implemented
+- [ ] Query optimization yapıldı
+- [ ] Connection pooling set
+- [ ] Cache clear scripts
+- [ ] Load time < 2 seconds
+
+---
+
+## 📝 LOGGING & DEBUGGING
+
+### Log Struktur
+```php
+Log::channel('sync')->info('Sync completed', [
+    'type' => 'product_sync',
+    'count' => 100,
+    'duration' => 5.2,
+    'errors' => 0,
+]);
+
+Log::channel('error')->error('Sync failed', [
+    'exception' => $exception->getMessage(),
+    'trace' => $exception->getTraceAsString(),
+]);
+```
+
+### Hata Yönetimi
+```php
+try {
+    // API call
+} catch (ApiException $e) {
+    // Log & notify
+    Log::error('API Error: ' . $e->getMessage());
+    // Retry logic
+} catch (Exception $e) {
+    // Genel error
+    report($e);
+}
+```
+
+---
+
+## 🧪 TEST KURALLAR
+
+### Unit Tests
+```php
+tests/Unit/Services/ShopifyServiceTest.php
+- Mock external APIs
+- Test business logic
+- Test error cases
+```
+
+### Feature Tests
+```php
+tests/Feature/OrderControllerTest.php
+- Test HTTP endpoints
+- Test authentication
+- Test authorization
+```
+
+### Database Tests
+- Transaction-based rollback
+- Factories use
+- Seeders test
+
+---
+
+## 📄 DOSYA ADLANDIRMA
+
+### Controllers
+```
+OrderController.php
+OrderDetailController.php (detailed, nested resources)
+```
+
+### Models
+```
+ShopifyOrder.php
+UyumSoftProduct.php
+```
+
+### Services
+```
+ShopifyService.php
+OrderSyncService.php
+```
+
+### Migrations
+```
+2024_01_01_000001_create_orders_table.php
+2024_01_02_000002_add_status_to_orders.php
+```
+
+### Routes
+```
+routes/web.php (GUI)
+routes/api.php (API)
+```
+
+---
+
+## 🎯 COMMIT MESSAGES
+
+```
+feat: Shopify order sync functionality
+fix: UyumSoft API authentication issue
+refactor: Extract CargoService from OrderController
+docs: Update API integration guide
+test: Add ShopifyService unit tests
+perf: Optimize product query with eager loading
+chore: Update dependencies
+```
+
+---
+
+## 📱 RESPONSIVE DESIGN
+
+### Breakpoints
+```
+xs: < 576px (phone)
+sm: ≥ 576px (tablet)
+md: ≥ 768px (tablet)
+lg: ≥ 992px (desktop)
+xl: ≥ 1200px (desktop)
+xxl: ≥ 1400px (desktop)
+```
+
+### Bootstrap Classes
+```blade
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12 col-md-6 col-lg-3">
+            <!-- Content -->
+        </div>
+    </div>
+</div>
+```
+
+---
+
+## 🚀 DEPLOYMENT CHECKLIST
+
+### Before Going Live:
+- [ ] .env configured correctly
+- [ ] Database migrations run
+- [ ] Redis queue working
+- [ ] Cron jobs scheduled
+- [ ] SSL certificate installed
+- [ ] API keys configured
+- [ ] Backup system setup
+- [ ] Monitoring configured
+- [ ] Error logging setup
+- [ ] Performance tested
+- [ ] Security audit passed
+
+---
+
+## 📞 HATA AYIKLAMA İPUÇLARİ
+
+### Senkronizasyon Sorunu
+```
+1. Check Redis connection
+2. Check API credentials in settings
+3. Check database connection
+4. Review sync logs
+5. Check rate limits
+6. Review API documentation
+```
+
+### Performance Sorunu
+```
+1. Check database queries (Laravel Debugbar)
+2. Check N+1 problems
+3. Check cache hit rates
+4. Review server resources
+5. Check API response times
+```
+
+### API Bağlantısı Sorunu
+```
+1. Verify credentials
+2. Check API token expiration
+3. Check API rate limiting
+4. Review API logs
+5. Check network connectivity
+6. Verify firewall rules
+```
+
+---
+
+## 🎓 CURSOR WORKFLOW
+
+### Yeni Feature Eklerken:
+1. `@workspace` ile mevcut yapıyı anla
+2. Database migration oluştur
+3. Model & relations tanımla
+4. Service layer oluştur
+5. Controller actions ekle
+6. Routes tanımla
+7. Blade templates oluştur
+8. Test yaz
+9. Documentation güncelle
+
+### Entegrasyon Eklerken:
+1. Service class oluştur
+2. API credentials .env'e ekle
+3. Configuration validation
+4. Error handling
+5. Logging
+6. Rate limiting
+7. Tests
+8. Documentation
+
+### Feature Tamamlanınca:
+1. Code review et (self-review)
+2. Security check
+3. Performance check
+4. Test et
+5. Documentation
+6. Commit et
+
+---
+
+## 📌 ÖNEMLİ NOTLAR
+
+1. **ASLA hardcode credentials**: Her zaman .env kullan
+2. **ASLA external API'e senkron call**: Queue/Jobs kullan
+3. **ASLA unvalidated input**: Always validate
+4. **ASLA raw queries**: Eloquent kullan
+5. **ASLA skip error handling**: Always log errors
+6. **ASLA skip backup**: Regular backup scripts
+7. **ASLA skip testing**: Minimal unit tests
+
+---
+
+## 🔄 CURSOR COMMMANDS
+
+Cursor'de kullan:
+- `@workspace` - Proje yapısı kontrol
+- `@package.json` - Dependencies
+- `@composer.json` - PHP dependencies
+- `@.env.example` - Environment variables
+- `@database/schema.sql` - Database schema
+
+---
+
+## 📚 REFERANSLAR
+
+- Laravel 11 Docs: https://laravel.com/docs/11.x
+- Shopify API: https://shopify.dev/api
+- Bootstrap 5: https://getbootstrap.com/docs/5.3
+- Alpine.js: https://alpinejs.dev
+
+---
+
+**Son Güncelleme:** 2024
+**Sürüm:** 1.0

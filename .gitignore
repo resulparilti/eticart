@@ -1,0 +1,38 @@
+/.phpunit.cache
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/vendor
+.env
+.env.backup
+.env.production
+Homestead.json
+Homestead.yaml
+auth.json
+npm-debug.log
+yarn-error.log
+/.fleet
+/.idea
+/.vscode
+
+# Derleme çıktısı (VPS/CI'da npm run build)
+/public/build
+
+# cPanel dağıtım paketleri
+/deploy/dist/
+
+# Laravel runtime
+/storage/app/cargo_labels/*
+/storage/app/invoices/*
+/storage/app/public/*
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+/bootstrap/cache/*.php
+!bootstrap/cache/.gitignore
+
+# OS
+Thumbs.db
+.DS_Store
