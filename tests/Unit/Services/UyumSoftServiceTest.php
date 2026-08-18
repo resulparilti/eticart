@@ -221,9 +221,17 @@ class UyumSoftServiceTest extends TestCase
                     'uyumSecretKey' => 'secret-key',
                 ],
             ], 200),
-            'tenant.eko.uyumcloud.com/UyumApi/v1/PSM/SaveOrderM' => Http::response([
+            'tenant.eko.uyumcloud.com/UyumApi/v1/PSM/InsertOrderM' => Http::response([
                 'statusCode' => 200,
                 'result' => ['id' => 44, 'docNo' => 'SH1002'],
+            ], 200),
+            'tenant.eko.uyumcloud.com/UyumApi/v1/PSM/GetInvoice' => Http::response([
+                'statusCode' => 200,
+                'result' => [
+                    'invoicE_M' => [
+                        ['id' => 9, 'docNo' => 'SH1002', 'invoiceNo' => 'EA-1'],
+                    ],
+                ],
             ], 200),
             'tenant.eko.uyumcloud.com/UyumApi/v1/FIN/GetInvoiceMList' => Http::response([
                 'statusCode' => 200,

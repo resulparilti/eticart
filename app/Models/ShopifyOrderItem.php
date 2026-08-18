@@ -18,6 +18,7 @@ class ShopifyOrderItem extends Model
         'product_title',
         'variant_title',
         'sku',
+        'barcode',
         'quantity',
         'price',
     ];

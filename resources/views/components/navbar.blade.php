@@ -58,7 +58,7 @@
             data-timezone="{{ config('app.timezone') }}"
             x-data="eticartServerClock"
             x-init="init()"
-            title="Sunucu saati ({{ config('app.timezone') }})"
+            title="Sunucu saati (Europe/Istanbul)"
         >
             <div class="eticart-server-clock__date" x-text="dateText"></div>
             <div class="eticart-server-clock__time" x-text="timeText"></div>

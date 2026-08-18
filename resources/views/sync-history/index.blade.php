@@ -6,7 +6,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
             <h1 class="h3 mb-1">İşlem Geçmişi</h1>
-            <p class="eticart-muted mb-0">Senkronizasyon ve arka plan işlemlerinin tam kaydı. 1 haftadan eski kayıtlar girişte otomatik silinir.</p>
+            <p class="eticart-muted mb-0">Son {{ $retentionDays ?? 7 }} günün kayıtları tutulur; daha eskiler otomatik silinir.</p>
         </div>
     </div>
 

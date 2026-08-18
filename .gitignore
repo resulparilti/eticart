@@ -22,6 +22,11 @@ yarn-error.log
 
 # cPanel dağıtım paketleri
 /deploy/dist/
+/deploy/*.tar.gz
+/deploy/*.sql
+/deploy/*.sql.gz
+/scripts/ssh_exec.py
+/scripts/ssh_upload.py
 
 # Laravel runtime
 /storage/app/cargo_labels/*

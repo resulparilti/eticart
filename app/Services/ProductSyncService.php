@@ -213,6 +213,8 @@ class ProductSyncService
 
         $options = $this->normalizeOptions($options);
 
+        $this->linkUnmappedUyumSoftProducts();
+
         $products = UyumSoftProduct::query()
             ->whereIn('id', $uyumSoftProductIds)
             ->with('shopifyProduct')
@@ -523,7 +525,7 @@ class ProductSyncService
 
         return DB::transaction(function () use ($product, $options) {
             $product->loadMissing('shopifyProduct');
-            $shopifyId = $product->shopify_id;
+            $shopifyId = $product->shopify_id ?: $this->resolveExistingShopifyProductId($product);
             $remote = null;
             $isCreate = blank($shopifyId);
 
@@ -913,6 +915,9 @@ class ProductSyncService
                 $pageInfo = $result['next_page_info'] ?? null;
             } while ($pageInfo && $pages < $maxPages);
 
+            $linkResult = $this->linkUnmappedUyumSoftProducts();
+            $linked += $linkResult['linked'];
+
             return [
                 'synced' => $synced,
                 'linked' => $linked,
@@ -980,10 +985,20 @@ class ProductSyncService
         $primaryVariant = $normalizedVariants[0];
         $primarySku = collect($normalizedVariants)->pluck('sku')->filter()->first();
 
-        $uyumsoft = $this->resolveUyumSoftForShopifyProduct($productId, is_string($primarySku) ? $primarySku : null);
+        $uyumsoft = $this->resolveUyumSoftForShopifyProduct(
+            $productId,
+            is_string($primarySku) ? $primarySku : null,
+            (string) ($remote['title'] ?? ''),
+            $this->extractBarcodesFromShopifyVariants($normalizedVariants)
+        );
         if (! $uyumsoft && $primarySku) {
             foreach ($normalizedVariants as $variant) {
-                $candidate = $this->resolveUyumSoftForShopifyProduct($productId, $variant['sku'] ?? null);
+                $candidate = $this->resolveUyumSoftForShopifyProduct(
+                    $productId,
+                    $variant['sku'] ?? null,
+                    (string) ($remote['title'] ?? ''),
+                    $this->extractBarcodesFromShopifyVariants([$variant])
+                );
                 if ($candidate) {
                     $uyumsoft = $candidate;
                     break;
@@ -1048,8 +1063,12 @@ class ProductSyncService
         return ['rows' => 1, 'linked' => $linked];
     }
 
-    private function resolveUyumSoftForShopifyProduct(string $shopifyProductId, ?string $sku): ?UyumSoftProduct
-    {
+    private function resolveUyumSoftForShopifyProduct(
+        string $shopifyProductId,
+        ?string $sku,
+        ?string $title = null,
+        array $barcodes = []
+    ): ?UyumSoftProduct {
         $byShopifyId = UyumSoftProduct::query()->where('shopify_id', $shopifyProductId)->first();
         if ($byShopifyId) {
             return $byShopifyId;
@@ -1067,7 +1086,160 @@ class ProductSyncService
             }
         }
 
+        foreach (array_filter($barcodes) as $barcode) {
+            $byBarcode = UyumSoftProduct::query()->where('barcode', $barcode)->first();
+            if ($byBarcode) {
+                return $byBarcode;
+            }
+
+            $byVariantBarcode = UyumSoftProduct::query()
+                ->where('variant_info', 'like', '%'.$barcode.'%')
+                ->first();
+            if ($byVariantBarcode) {
+                return $byVariantBarcode;
+            }
+        }
+
+        if (filled($title)) {
+            $normalizedTitle = $this->normalizeProductMatchKey($title);
+            if ($normalizedTitle !== '') {
+                $candidates = UyumSoftProduct::query()
+                    ->whereNull('shopify_id')
+                    ->get();
+
+                foreach ($candidates as $candidate) {
+                    if ($this->normalizeProductMatchKey((string) $candidate->title) === $normalizedTitle) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * Link UyumSoft products to existing Shopify mirror rows by title + barcode.
+     *
+     * @return array{linked: int, scanned: int}
+     */
+    public function linkUnmappedUyumSoftProducts(): array
+    {
+        $linked = 0;
+        $scanned = 0;
+
+        $products = UyumSoftProduct::query()
+            ->whereNull('shopify_id')
+            ->where('is_active', true)
+            ->get();
+
+        foreach ($products as $product) {
+            $scanned++;
+            $shopifyId = $this->resolveExistingShopifyProductId($product);
+            if ($shopifyId === null) {
+                continue;
+            }
+
+            $product->update([
+                'shopify_id' => $shopifyId,
+                'synced_to_shopify' => true,
+                'shopify_synced_at' => now(),
+            ]);
+
+            ShopifyProduct::query()
+                ->where('shopify_product_id', $shopifyId)
+                ->update(['uyumsoft_product_id' => $product->id]);
+
+            $linked++;
+        }
+
+        return ['linked' => $linked, 'scanned' => $scanned];
+    }
+
+    private function resolveExistingShopifyProductId(UyumSoftProduct $product): ?string
+    {
+        if (filled($product->shopify_id)) {
+            return (string) $product->shopify_id;
+        }
+
+        $product->loadMissing('shopifyProduct');
+        if ($product->shopifyProduct?->shopify_product_id) {
+            return (string) $product->shopifyProduct->shopify_product_id;
+        }
+
+        $barcodes = $this->collectUyumSoftBarcodes($product);
+        foreach ($barcodes as $barcode) {
+            $match = ShopifyProduct::query()
+                ->where('variants', 'like', '%'.$barcode.'%')
+                ->first();
+            if ($match) {
+                return (string) $match->shopify_product_id;
+            }
+        }
+
+        $normalizedTitle = $this->normalizeProductMatchKey((string) $product->title);
+        if ($normalizedTitle !== '') {
+            $candidates = ShopifyProduct::query()->get();
+            foreach ($candidates as $candidate) {
+                if ($this->normalizeProductMatchKey((string) $candidate->title) === $normalizedTitle) {
+                    return (string) $candidate->shopify_product_id;
+                }
+            }
+        }
+
+        if (filled($product->sku)) {
+            $bySku = ShopifyProduct::query()->where('sku', $product->sku)->first();
+            if ($bySku) {
+                return (string) $bySku->shopify_product_id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $variants
+     * @return array<int, string>
+     */
+    private function extractBarcodesFromShopifyVariants(array $variants): array
+    {
+        $barcodes = [];
+        foreach ($variants as $variant) {
+            $barcode = trim((string) ($variant['barcode'] ?? ''));
+            if ($barcode !== '') {
+                $barcodes[] = $barcode;
+            }
+        }
+
+        return array_values(array_unique($barcodes));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function collectUyumSoftBarcodes(UyumSoftProduct $product): array
+    {
+        $barcodes = [];
+        if (filled($product->barcode)) {
+            $barcodes[] = (string) $product->barcode;
+        }
+
+        foreach ($product->variantRows() as $variant) {
+            $barcode = trim((string) ($variant['barcode'] ?? ''));
+            if ($barcode !== '') {
+                $barcodes[] = $barcode;
+            }
+        }
+
+        return array_values(array_unique($barcodes));
+    }
+
+    private function normalizeProductMatchKey(string $value): string
+    {
+        $value = mb_strtolower(trim($value), 'UTF-8');
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+
+        return trim($value);
     }
 
     /**

@@ -65,11 +65,11 @@ class TemplateSeeder extends Seeder
         }
 
         $syncJobs = [
-            ['job_type' => 'order_sync', 'interval_minutes' => 15],
-            ['job_type' => 'product_sync', 'interval_minutes' => 30],
-            ['job_type' => 'stock_sync', 'interval_minutes' => 15],
+            ['job_type' => 'order_sync', 'interval_minutes' => 5],
+            ['job_type' => 'product_sync', 'interval_minutes' => 15],
+            ['job_type' => 'stock_sync', 'interval_minutes' => 5],
             ['job_type' => 'cargo_tracking', 'interval_minutes' => 15],
-            ['job_type' => 'uyumsoft_order_sync', 'interval_minutes' => 15],
+            ['job_type' => 'uyumsoft_order_sync', 'interval_minutes' => 5],
         ];
 
         foreach ($syncJobs as $job) {

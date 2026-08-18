@@ -4,6 +4,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\KanbanController;
+use App\Http\Controllers\MessageController;
 use App\Http\Controllers\OrderCalendarController;
 use App\Http\Controllers\AdminNotificationController;
 use App\Http\Controllers\NotificationController;
@@ -127,6 +128,11 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
     Route::post('/customers/{customer}/refresh', [CustomerController::class, 'refresh'])->name('customers.refresh');
 
+    Route::get('/messages/send', [MessageController::class, 'create'])->name('messages.send');
+    Route::post('/messages/send', [MessageController::class, 'store'])->name('messages.send.store');
+    Route::get('/messages/customers-search', [MessageController::class, 'customersSearch'])->name('messages.customers-search');
+    Route::get('/messages/customers/{customer}/preview', [MessageController::class, 'customerPreview'])->name('messages.customer-preview');
+
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::post('/orders/sync', [OrderController::class, 'sync'])->name('orders.sync');
     Route::post('/orders/bulk-send-cargo', [OrderController::class, 'bulkSendCargo'])->name('orders.bulk-send-cargo');
@@ -140,6 +146,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::post('/orders/{order}/invoice', [OrderController::class, 'uploadInvoice'])->name('orders.invoice.upload');
     Route::delete('/orders/{order}/invoice', [OrderController::class, 'destroyInvoice'])->name('orders.invoice.destroy');
     Route::match(['get', 'post'], '/orders/{order}/send-shipment-mail', [OrderController::class, 'sendShipmentInvoiceMail'])->name('orders.send-shipment-mail');
+    Route::post('/orders/{order}/sms', [OrderController::class, 'sendSms'])->name('orders.sms.send');
     Route::post('/orders/{order}/shipments/{shipment}/cancel', [OrderController::class, 'cancelShipment'])->name('orders.shipments.cancel');
 
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');

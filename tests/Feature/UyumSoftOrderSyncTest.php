@@ -60,7 +60,7 @@ class UyumSoftOrderSyncTest extends TestCase
         $this->assertTrue(Storage::disk('public')->exists($order->invoice_path));
         $this->assertNotNull($order->uyumsoft_pushed_at);
 
-        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'PSM/SaveOrderM'));
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'PSM/InsertOrderM'));
     }
 
     public function test_existing_uyumsoft_order_is_not_created_again(): void
@@ -268,7 +268,7 @@ class UyumSoftOrderSyncTest extends TestCase
                 ], 200);
             }
 
-            if (str_contains($url, 'SaveOrder')) {
+            if (str_contains($url, 'InsertOrder') || str_contains($url, 'SaveOrder')) {
                 return Http::response([
                     'statusCode' => 200,
                     'result' => [

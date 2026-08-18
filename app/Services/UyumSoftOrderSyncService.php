@@ -12,6 +12,7 @@ use App\Models\SyncJob;
 use App\Models\SyncJobLog;
 use App\Models\UyumSoftProduct;
 use App\Support\ShopifyShippingAddress;
+use App\Support\UyumSoftOrderLineFormatter;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -38,7 +39,7 @@ class UyumSoftOrderSyncService
             ['job_type' => 'uyumsoft_order_sync'],
             [
                 'status' => 'idle',
-                'interval_minutes' => (int) Setting::getValue('sync_uyumsoft_orders_interval', 15),
+                'interval_minutes' => (int) Setting::getValue('sync_orders_interval', Setting::getValue('sync_uyumsoft_orders_interval', 15)),
                 'is_active' => true,
             ]
         );
@@ -353,22 +354,28 @@ class UyumSoftOrderSyncService
 
         $lines = [];
         $lineNo = 10;
+        $formatter = UyumSoftOrderLineFormatter::fromSettings();
         foreach ($order->items as $item) {
-            $itemCode = $this->resolveItemCode($item);
+            $resolved = $this->resolveItemMatch($item);
+            $itemCode = $resolved['item_code'];
             if ($itemCode === null) {
                 continue;
             }
 
-            $lines[] = [
+            $line = array_merge([
                 'lineNo' => $lineNo,
+                'lineType' => 'S',
                 'itemCode' => $itemCode,
                 'qty' => (float) $item->quantity,
                 'qtyPrm' => (float) $item->quantity,
+                'unitCode' => $this->uyumSoftService->unitCode(),
                 'unitPriceTra' => (float) $item->price,
                 'unitPrice' => (float) $item->price,
                 'whouseCode' => $this->uyumSoftService->warehouseCode(),
                 'vatRate' => 20,
-            ];
+            ], $formatter->extras($item, $resolved['product']));
+
+            $lines[] = $line;
             $lineNo += 10;
         }
 
@@ -383,7 +390,8 @@ class UyumSoftOrderSyncService
             $order->shipping_zip
         );
 
-        return [
+        return $this->finalizeOrderPayload([
+            'coCode' => $this->uyumSoftService->companyCode(),
             'branchCode' => $this->uyumSoftService->branchCode(),
             'whouseCode' => $this->uyumSoftService->warehouseCode(),
             'docNo' => $this->erpDocNo($order),
@@ -397,15 +405,32 @@ class UyumSoftOrderSyncService
             'city' => $locality['city'] ?: $order->shipping_city,
             'town' => $locality['town'],
             'zipCode' => $locality['zip'] ?: $order->shipping_zip,
-            'orderMDs' => $lines,
-        ];
+            'details' => $lines,
+        ]);
     }
 
-    private function resolveItemCode(ShopifyOrderItem $item): ?string
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function finalizeOrderPayload(array $payload): array
+    {
+        $docTraCode = trim((string) Setting::getValue('uyumsoft_doc_tra_code', ''));
+        if ($docTraCode !== '') {
+            $payload['docTraCode'] = $docTraCode;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array{item_code: ?string, product: ?UyumSoftProduct}
+     */
+    private function resolveItemMatch(ShopifyOrderItem $item): array
     {
         $sku = trim((string) $item->sku);
         if ($sku === '') {
-            return null;
+            return ['item_code' => null, 'product' => null];
         }
 
         $product = UyumSoftProduct::query()
@@ -423,14 +448,25 @@ class UyumSoftOrderSyncService
                     continue;
                 }
                 if (($variant['sku'] ?? null) === $sku || ($variant['barcode'] ?? null) === $sku) {
-                    return (string) ($product->sku ?: $product->uyumsoft_id);
+                    return [
+                        'item_code' => (string) ($product->sku ?: $product->uyumsoft_id),
+                        'product' => $product,
+                    ];
                 }
             }
 
-            return (string) ($product->sku ?: $product->uyumsoft_id ?: $sku);
+            return [
+                'item_code' => (string) ($product->sku ?: $product->uyumsoft_id ?: $sku),
+                'product' => $product,
+            ];
         }
 
-        return $sku;
+        return ['item_code' => $sku, 'product' => null];
+    }
+
+    private function resolveItemCode(ShopifyOrderItem $item): ?string
+    {
+        return $this->resolveItemMatch($item)['item_code'];
     }
 
     private function shouldPush(ShopifyOrder $order): bool

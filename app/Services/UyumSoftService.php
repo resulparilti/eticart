@@ -203,6 +203,20 @@ class UyumSoftService
         return $this->branchCode;
     }
 
+    public function companyCode(): string
+    {
+        $code = trim((string) Setting::getValue('uyumsoft_co_code', ''));
+
+        return $code !== '' ? $code : $this->branchCode;
+    }
+
+    public function unitCode(): string
+    {
+        $code = trim((string) Setting::getValue('uyumsoft_unit_code', 'ADET'));
+
+        return $code !== '' ? $code : 'ADET';
+    }
+
     /**
      * Create a sales order in UyumSoft / UyumCloud.
      *
@@ -213,7 +227,7 @@ class UyumSoftService
     {
         if ($this->isCloudApi) {
             return $this->cloudRequestFirst(
-                ['PSM/SaveOrderM', 'PSM/SaveOrder', 'SLS/SaveOrderM'],
+                ['PSM/InsertOrderM', 'PSM/SaveOrderM', 'PSM/SaveOrder', 'SLS/SaveOrderM'],
                 [
                     'value' => $order,
                 ]
@@ -239,10 +253,11 @@ class UyumSoftService
         if ($this->isCloudApi) {
             foreach ($needles as $needle) {
                 $response = $this->cloudRequestFirst(
-                    ['PSM/GetOrderMList', 'PSM/GetOrderList'],
+                    ['PSM/GetOrderM', 'PSM/GetOrderMList', 'PSM/GetOrderList'],
                     [
                         'value' => array_filter([
                             'branchCode' => $this->branchCode !== '' ? $this->branchCode : null,
+                            'coCode' => $this->companyCode() !== '' ? $this->companyCode() : null,
                             'docNo' => $needle,
                         ]),
                         'pageIndex' => 0,
@@ -282,10 +297,11 @@ class UyumSoftService
     {
         if ($this->isCloudApi) {
             $response = $this->cloudRequestFirst(
-                ['FIN/GetInvoiceMList', 'FIN/GetInvoiceList', 'PSM/GetInvoiceMList'],
+                ['PSM/GetInvoice', 'FIN/GetInvoiceMList', 'FIN/GetInvoiceList', 'PSM/GetInvoiceMList'],
                 [
                     'value' => array_filter([
                         'branchCode' => $this->branchCode !== '' ? $this->branchCode : null,
+                        'coCode' => $this->companyCode() !== '' ? $this->companyCode() : null,
                         'startDate' => $dateFrom,
                         'endDate' => $dateTo,
                         'docDate1' => $dateFrom,
@@ -355,7 +371,7 @@ class UyumSoftService
     {
         if ($this->isCloudApi) {
             $response = $this->cloudRequestFirst(
-                ['FIN/GetInvoiceM', 'FIN/GetInvoice'],
+                    ['PSM/GetInvoice', 'FIN/GetInvoiceM', 'FIN/GetInvoice'],
                 [
                     'value' => [
                         'id' => $invoiceId,
@@ -927,15 +943,30 @@ class UyumSoftService
             return array_values(array_filter($result, 'is_array'));
         }
 
-        if (is_array($result)) {
-            foreach (['items', 'itemList', 'data', 'result'] as $key) {
-                if (isset($result[$key]) && is_array($result[$key])) {
-                    return array_values(array_filter($result[$key], 'is_array'));
-                }
+        if (! is_array($result) || $result === []) {
+            return [];
+        }
+
+        $masters = [];
+        $others = [];
+        foreach ($result as $key => $value) {
+            if (! is_array($value) || $value === [] || ! array_is_list($value) || ! is_array($value[0] ?? null)) {
+                continue;
+            }
+
+            $list = array_values(array_filter($value, 'is_array'));
+            $lk = strtolower((string) $key);
+            if (str_ends_with($lk, '_m') || in_array($lk, ['items', 'itemlist', 'data', 'result'], true)) {
+                $masters = $list;
+                break;
+            }
+
+            if ($others === []) {
+                $others = $list;
             }
         }
 
-        return [];
+        return $masters !== [] ? $masters : $others;
     }
 
     /**
@@ -1340,19 +1371,14 @@ class UyumSoftService
 
     private function handleErrors(Response $response, string $endpoint): void
     {
-        $body = $response->json();
-        $message = is_array($body)
-            ? (string) ($body['message'] ?? $body['error'] ?? $body['errors'] ?? json_encode($body))
-            : (string) $response->body();
-
-        if (is_array($message)) {
-            $message = json_encode($message);
-        }
+        $raw = (string) $response->body();
+        $json = $response->json();
+        $message = $this->summarizeErrorMessage($response, $endpoint, is_array($json) ? $json : null, $raw);
 
         Log::channel('stack')->error('UyumSoft API error', [
             'endpoint' => $endpoint,
             'status' => $response->status(),
-            'body' => $body,
+            'message' => $message,
         ]);
 
         throw new UyumSoftException(
@@ -1360,9 +1386,41 @@ class UyumSoftService
             [
                 'endpoint' => $endpoint,
                 'status' => $response->status(),
-                'body' => $body,
             ],
             $response->status()
         );
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $json
+     */
+    private function summarizeErrorMessage(Response $response, string $endpoint, ?array $json, string $raw): string
+    {
+        if (str_contains($raw, '<html') || str_contains($raw, 'File or directory not found')) {
+            return "Endpoint bulunamadı ({$endpoint}).";
+        }
+
+        if (is_array($json)) {
+            $parts = array_filter([
+                (string) ($json['message'] ?? ''),
+                (string) data_get($json, 'responseException.exceptionMessage', ''),
+            ]);
+            $errors = data_get($json, 'responseException.validationErrors', []);
+            if (is_array($errors) && $errors !== []) {
+                $parts[] = collect($errors)
+                    ->map(static fn ($row): string => is_array($row) ? (string) ($row['message'] ?? '') : (string) $row)
+                    ->filter()
+                    ->implode(' ');
+            }
+
+            $summary = trim(implode(' ', array_unique($parts)));
+            if ($summary !== '') {
+                return $summary;
+            }
+        }
+
+        $plain = trim(strip_tags($raw));
+
+        return $plain !== '' ? \Illuminate\Support\Str::limit($plain, 280) : 'Bilinmeyen API hatası.';
     }
 }

@@ -3,44 +3,24 @@
 @section('title', 'Senkronizasyon Ayarları')
 
 @section('content')
+    @php
+        $cronMin = $cronMin ?? \App\Support\SyncIntervalOptions::minCronMinutes();
+        $intervals = $intervals ?? \App\Support\SyncIntervalOptions::all();
+        $isVps = ($deploymentMode ?? 'vps') === 'vps';
+    @endphp
+
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h1 class="h3 mb-1">Senkronizasyon</h1>
-            <p class="eticart-muted mb-0">Zaman aralıkları ve otomasyon seçenekleri.</p>
+            <p class="eticart-muted mb-0">
+                {{ $isVps ? 'VPS sunucu için sık tarama aralıkları.' : 'Paylaşımlı hosting için güvenli aralıklar.' }}
+            </p>
         </div>
         <a href="{{ route('settings.index') }}" class="btn btn-outline-secondary">Geri</a>
     </div>
 
-  @php
-      $cronMin = $cronMin ?? max(15, (int) config('eticart.schedule_cron_minutes', 15));
-  @endphp
-
     <div class="row g-3">
         <div class="col-lg-7">
-            <div class="alert alert-info small mb-3">
-                Sunucu cron en az <strong>{{ $cronMin }} dakika</strong> destekliyorsa (paylaşımlı hosting),
-                aralık seçenekleri ve otomatik tarama bu süreye göre ayarlanır.
-                <strong>5 dakikalık cron çoğu cPanel hostta çalışmaz.</strong>
-            </div>
-
-            <div class="eticart-card p-3 mb-3">
-                <h2 class="h6 mb-2">Cron durumu</h2>
-                @if ($cronHeartbeat ?? null)
-                    @php $mins = $cronHeartbeat->diffInMinutes(now()); @endphp
-                    <p class="small mb-2 {{ $mins <= 20 ? 'text-success' : 'text-danger' }}">
-                        Son tetiklenme: <strong>{{ $cronHeartbeat->format('d.m.Y H:i:s') }}</strong>
-                        ({{ $mins }} dk önce)
-                    </p>
-                    @if ($mins > 20)
-                        <p class="small text-muted mb-0">20 dk’dan eskiyse cPanel cron komutunu ve PHP yolunu kontrol edin.</p>
-                    @endif
-                @else
-                    <p class="small text-danger mb-2">Henüz cron heartbeat yok — <code>schedule:run</code> hiç çalışmamış olabilir.</p>
-                @endif
-                <p class="small eticart-muted mb-1">cPanel → Cron Jobs → <strong>Every 15 minutes</strong></p>
-                <pre class="bg-light p-2 rounded small user-select-all mb-0"><code>{{ $cronCommand ?? '*/15 * * * * cd ... && php artisan schedule:run >> storage/logs/cron.log 2>&1' }}</code></pre>
-            </div>
-
             <div class="eticart-card p-3">
                 <form method="POST" action="{{ route('settings.sync.update') }}">
                     @csrf
@@ -49,43 +29,35 @@
                     <div class="mb-3">
                         <label class="form-label">Sipariş kontrol aralığı (dk)</label>
                         <select name="sync_orders_interval" class="form-select" required>
-                            @foreach ([15, 30, 60] as $min)
-                                <option value="{{ $min }}" @selected((int) old('sync_orders_interval', $settings['sync_orders_interval'] ?? $cronMin) === $min)>{{ $min }}</option>
+                            @foreach ($intervals['orders'] ?? [5, 15] as $min)
+                                <option value="{{ $min }}" @selected((int) old('sync_orders_interval', $settings['sync_orders_interval'] ?? ($isVps ? 5 : 15)) === $min)>{{ $min }}</option>
                             @endforeach
                         </select>
+                        <div class="form-text">Shopify sipariş taraması ve UyumSoft sipariş gönderimi aynı aralıkta çalışır.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Ürün senkronizasyonu (dk)</label>
                         <select name="sync_products_interval" class="form-select" required>
-                            @foreach ([15, 30, 60, 120] as $min)
-                                <option value="{{ $min }}" @selected((int) old('sync_products_interval', $settings['sync_products_interval'] ?? 30) === $min)>{{ $min }}</option>
+                            @foreach ($intervals['products'] ?? [15, 30] as $min)
+                                <option value="{{ $min }}" @selected((int) old('sync_products_interval', $settings['sync_products_interval'] ?? ($isVps ? 15 : 30)) === $min)>{{ $min }}</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Stok güncellemesi (dk)</label>
                         <select name="sync_stock_interval" class="form-select" required>
-                            @foreach ([15, 30, 60] as $min)
-                                <option value="{{ $min }}" @selected((int) old('sync_stock_interval', $settings['sync_stock_interval'] ?? $cronMin) === $min)>{{ $min }}</option>
+                            @foreach ($intervals['stock'] ?? [5, 15] as $min)
+                                <option value="{{ $min }}" @selected((int) old('sync_stock_interval', $settings['sync_stock_interval'] ?? ($isVps ? 5 : 15)) === $min)>{{ $min }}</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Kargo durumu kontrol (dk)</label>
                         <select name="sync_cargo_interval" class="form-select" required>
-                            @foreach ([15, 30, 60, 120] as $min)
-                                <option value="{{ $min }}" @selected((int) old('sync_cargo_interval', $settings['sync_cargo_interval'] ?? $cronMin) === $min)>{{ $min }}</option>
+                            @foreach ($intervals['cargo'] ?? [15, 30] as $min)
+                                <option value="{{ $min }}" @selected((int) old('sync_cargo_interval', $settings['sync_cargo_interval'] ?? 15) === $min)>{{ $min }}</option>
                             @endforeach
                         </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">UyumSoft sipariş / fatura (dk)</label>
-                        <select name="sync_uyumsoft_orders_interval" class="form-select" required>
-                            @foreach ([15, 30, 60] as $min)
-                                <option value="{{ $min }}" @selected((int) old('sync_uyumsoft_orders_interval', $settings['sync_uyumsoft_orders_interval'] ?? $cronMin) === $min)>{{ $min }}</option>
-                            @endforeach
-                        </select>
-                        <div class="form-text">Shopify’dan çekilen yeni satışlar bu aralıkla UyumSoft’a yazılır; fatura oluşmuşsa PDF de çekilir.</div>
                     </div>
 
                     <div class="form-check mb-2">
@@ -105,18 +77,16 @@
             <div class="eticart-card p-3 mb-3">
                 <h2 class="h6 mb-2">Nasıl çalışır?</h2>
                 <p class="small eticart-muted mb-2">
-                    Sunucuda cron ile <code>php artisan schedule:run</code> çalışmalıdır (en az {{ $cronMin }} dk).
-                    Aynı tetiklemede kuyruk işleri de işlenir; ayrı worker gerekmez.
+                    Sunucuda cron ile <code>php artisan schedule:run</code> her dakika tetiklenmelidir (VPS).
+                    Aynı turda kuyruk işleri de işlenir; ayrı worker gerekmez.
                     Her tarama <strong>İşlem Geçmişi</strong> ve senkron loglarına yazılır.
                 </p>
                 <p class="small eticart-muted mb-2">
                     Shopify siparişleri önce panele alınır, ardından UyumSoft’a satış olarak işlenir.
-                    UyumSoft’ta o siparişe fatura kesilmişse senkron sırasında PDF de buraya gelir.
+                    UyumSoft’ta fatura kesilmişse PDF de siparişe bağlanır.
                 </p>
                 <p class="small eticart-muted mb-0">
-                    Yurtiçi Kargo standart SOAP API’sinde sipariş durumu için webhook yoktur.
-                    Bu yüzden açık kargolar belirlenen aralıkla sorgulanır; şube kabulü / takip no oluşunca
-                    sipariş “Kargoya verildi” olur ve Shopify’a takip bilgisi yazılır.
+                    Yurtiçi Kargo standart SOAP API’sinde webhook yoktur; açık kargolar belirlenen aralıkla sorgulanır.
                 </p>
             </div>
             <div class="eticart-card p-3">
@@ -131,6 +101,39 @@
                         <li class="list-group-item px-0 bg-transparent">Kayıt yok</li>
                     @endforelse
                 </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <div class="accordion" id="syncHostingAccordion">
+            <div class="accordion-item eticart-card border-0">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#syncHostingHelp">
+                        Paylaşımlı hosting / cron bilgisi
+                    </button>
+                </h2>
+                <div id="syncHostingHelp" class="accordion-collapse collapse" data-bs-parent="#syncHostingAccordion">
+                    <div class="accordion-body">
+                        <div class="alert alert-info small mb-3">
+                            Paylaşımlı hostingte cron genelde en az <strong>15 dakika</strong> destekler.
+                            Projeyi oraya taşırsanız <code>ETICART_DEPLOYMENT=shared</code> ve
+                            <code>SCHEDULE_CRON_MINUTES=15</code> kullanın.
+                        </div>
+                        <h3 class="h6">Cron durumu</h3>
+                        @if ($cronHeartbeat ?? null)
+                            @php $mins = $cronHeartbeat->diffInMinutes(now()); @endphp
+                            <p class="small mb-2 {{ $mins <= ($cronMin + 5) ? 'text-success' : 'text-danger' }}">
+                                Son tetiklenme: <strong>{{ $cronHeartbeat->format('d.m.Y H:i:s') }}</strong>
+                                ({{ $mins }} dk önce)
+                            </p>
+                        @else
+                            <p class="small text-danger mb-2">Henüz cron heartbeat yok.</p>
+                        @endif
+                        <p class="small eticart-muted mb-1">Örnek cron (paylaşımlı): <strong>Every 15 minutes</strong></p>
+                        <pre class="bg-light p-2 rounded small user-select-all mb-0"><code>{{ $cronCommand ?? '*/15 * * * * cd ... && php artisan schedule:run >> storage/logs/cron.log 2>&1' }}</code></pre>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

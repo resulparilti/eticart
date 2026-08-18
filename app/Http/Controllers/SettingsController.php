@@ -12,6 +12,7 @@ use App\Models\MailTemplate;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Models\SyncJob;
+use App\Support\SyncIntervalOptions;
 use App\Services\CargoService;
 use App\Services\MailConfigService;
 use App\Services\MailService;
@@ -220,7 +221,18 @@ class SettingsController extends Controller
             'uyumsoft_branch_code' => ['nullable', 'string', 'max:100'],
             'uyumsoft_base_url' => ['nullable', 'url', 'max:255'],
             'uyumsoft_ecommerce_entity_code' => ['nullable', 'string', 'max:100'],
+            'uyumsoft_entity_prefix' => ['nullable', 'string', 'max:20'],
+            'uyumsoft_doc_tra_code' => ['nullable', 'string', 'max:50'],
+            'uyumsoft_co_code' => ['nullable', 'string', 'max:50'],
+            'uyumsoft_unit_code' => ['nullable', 'string', 'max:30'],
+            'uyumsoft_order_line_include_title' => ['nullable', 'in:0,1'],
+            'uyumsoft_order_line_include_variant' => ['nullable', 'in:0,1'],
+            'uyumsoft_order_line_include_barcode' => ['nullable', 'in:0,1'],
         ]);
+
+        $validated['uyumsoft_order_line_include_title'] = $request->boolean('uyumsoft_order_line_include_title') ? '1' : '0';
+        $validated['uyumsoft_order_line_include_variant'] = $request->boolean('uyumsoft_order_line_include_variant') ? '1' : '0';
+        $validated['uyumsoft_order_line_include_barcode'] = $request->boolean('uyumsoft_order_line_include_barcode') ? '1' : '0';
 
         $this->saveMany($validated, 'uyumsoft', [
             'uyumsoft_api_user' => 'UyumSoft API User',
@@ -229,6 +241,13 @@ class SettingsController extends Controller
             'uyumsoft_branch_code' => 'UyumSoft İşyeri Kodu',
             'uyumsoft_base_url' => 'UyumSoft Base URL',
             'uyumsoft_ecommerce_entity_code' => 'UyumSoft E-ticaret Cari Kodu',
+            'uyumsoft_entity_prefix' => 'UyumSoft Koşullu Cari Ön Ek',
+            'uyumsoft_doc_tra_code' => 'UyumSoft Hareket Kodu',
+            'uyumsoft_co_code' => 'UyumSoft Firma Kodu',
+            'uyumsoft_unit_code' => 'UyumSoft Birim Kodu',
+            'uyumsoft_order_line_include_title' => 'UyumSoft satırda ürün adı',
+            'uyumsoft_order_line_include_variant' => 'UyumSoft satırda varyant',
+            'uyumsoft_order_line_include_barcode' => 'UyumSoft satırda barkod',
         ]);
 
         return back()->with('success', 'UyumSoft ayarları kaydedildi.');
@@ -834,7 +853,8 @@ class SettingsController extends Controller
      */
     public function sync(): View
     {
-        $cronMin = max(15, (int) config('eticart.schedule_cron_minutes', 15));
+        $cronMin = SyncIntervalOptions::minCronMinutes();
+        $intervals = SyncIntervalOptions::all();
         $heartbeatRaw = Setting::getValue('cron_last_heartbeat');
         $cronHeartbeat = null;
         if (is_string($heartbeatRaw) && $heartbeatRaw !== '') {
@@ -849,6 +869,8 @@ class SettingsController extends Controller
             'settings' => $this->categoryMap('sync'),
             'jobs' => SyncJob::query()->orderBy('job_type')->get(),
             'cronMin' => $cronMin,
+            'intervals' => $intervals,
+            'deploymentMode' => SyncIntervalOptions::deploymentMode(),
             'cronHeartbeat' => $cronHeartbeat,
             'cronCommand' => app(\App\Install\WebInstaller::class)->cronCommand(),
             'breadcrumbs' => $this->crumbs('Senkronizasyon'),
@@ -860,26 +882,31 @@ class SettingsController extends Controller
      */
     public function updateSync(Request $request): RedirectResponse
     {
-        $minCron = max(15, (int) config('eticart.schedule_cron_minutes', 15));
+        $minCron = SyncIntervalOptions::minCronMinutes();
+        $orderRule = SyncIntervalOptions::validateRule('orders');
+        $productRule = SyncIntervalOptions::validateRule('products');
+        $stockRule = SyncIntervalOptions::validateRule('stock');
+        $cargoRule = SyncIntervalOptions::validateRule('cargo');
 
         $validated = $request->validate([
-            'sync_orders_interval' => ['required', 'integer', 'in:15,30,60'],
-            'sync_products_interval' => ['required', 'integer', 'in:15,30,60,120'],
-            'sync_stock_interval' => ['required', 'integer', 'in:15,30,60'],
-            'sync_cargo_interval' => ['required', 'integer', 'in:15,30,60,120'],
-            'sync_uyumsoft_orders_interval' => ['required', 'integer', 'in:15,30,60'],
+            'sync_orders_interval' => [$orderRule],
+            'sync_products_interval' => [$productRule],
+            'sync_stock_interval' => [$stockRule],
+            'sync_cargo_interval' => [$cargoRule],
             'auto_create_shipment' => ['nullable', 'boolean'],
             'auto_send_tracking' => ['nullable', 'boolean'],
         ]);
 
-        foreach (['sync_orders_interval', 'sync_stock_interval', 'sync_cargo_interval', 'sync_uyumsoft_orders_interval'] as $intervalKey) {
+        foreach (['sync_orders_interval', 'sync_stock_interval', 'sync_cargo_interval'] as $intervalKey) {
             if ((int) $validated[$intervalKey] < $minCron) {
                 $validated[$intervalKey] = $minCron;
             }
         }
         if ((int) $validated['sync_products_interval'] < $minCron) {
-            $validated['sync_products_interval'] = max($minCron, 30);
+            $validated['sync_products_interval'] = max($minCron, SyncIntervalOptions::isVps() ? 5 : 30);
         }
+
+        $validated['sync_uyumsoft_orders_interval'] = (string) $validated['sync_orders_interval'];
 
         $validated['auto_create_shipment'] = $request->boolean('auto_create_shipment') ? '1' : '0';
         $validated['auto_send_tracking'] = $request->boolean('auto_send_tracking') ? '1' : '0';
@@ -901,13 +928,13 @@ class SettingsController extends Controller
         SyncJob::query()->firstOrCreate(
             ['job_type' => 'uyumsoft_order_sync'],
             [
-                'interval_minutes' => (int) $validated['sync_uyumsoft_orders_interval'],
+                'interval_minutes' => (int) $validated['sync_orders_interval'],
                 'status' => 'idle',
                 'is_active' => true,
             ]
         );
         SyncJob::query()->where('job_type', 'uyumsoft_order_sync')->update([
-            'interval_minutes' => (int) $validated['sync_uyumsoft_orders_interval'],
+            'interval_minutes' => (int) $validated['sync_orders_interval'],
         ]);
 
         return back()->with('success', 'Senkronizasyon ayarları kaydedildi.');

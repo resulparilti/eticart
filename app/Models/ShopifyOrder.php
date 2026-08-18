@@ -326,6 +326,20 @@ class ShopifyOrder extends Model
     }
 
     /**
+     * SMS notifications sent for this order.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, Notification>
+     */
+    public function orderSms(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->notifications()
+            ->where('type', 'sms')
+            ->latest()
+            ->limit(15)
+            ->get();
+    }
+
+    /**
      * @return \Illuminate\Database\Eloquent\Collection<int, Notification>
      */
     public function shipmentInvoiceMails(): \Illuminate\Database\Eloquent\Collection

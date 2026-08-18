@@ -14,6 +14,7 @@ use App\Models\ShopifyOrder;
 use App\Services\CargoService;
 use App\Services\MailConfigService;
 use App\Services\MailService;
+use App\Services\CustomerMessageService;
 use App\Services\OrderLifecycleService;
 use App\Services\OrderSyncService;
 use App\Services\ShopifyService;
@@ -33,6 +34,7 @@ class OrderController extends Controller
         private readonly ShopifyService $shopifyService,
         private readonly OrderSyncService $orderSyncService,
         private readonly UyumSoftOrderSyncService $uyumSoftOrderSyncService,
+        private readonly CustomerMessageService $customerMessages,
         private readonly CargoService $cargoService,
         private readonly OrderLifecycleService $orderLifecycle
     ) {
@@ -110,6 +112,8 @@ class OrderController extends Controller
         return view('orders.show', [
             'order' => $order,
             'shipmentMails' => $order->shipmentInvoiceMails(),
+            'orderSms' => $order->orderSms(),
+            'smsConfigured' => $this->customerMessages->smsConfigured(),
             'cargoCompanies' => CargoCompany::apiReady(),
             'mailWaitSeconds' => $mailWaitSeconds,
             'breadcrumbs' => [
@@ -217,6 +221,55 @@ class OrderController extends Controller
             return redirect()
                 ->route('orders.show', $order)
                 ->with('error', 'UyumSoft senkronu sırasında beklenmeyen bir hata oluştu.');
+        }
+    }
+
+    /**
+     * Send manual / template SMS to the order customer.
+     */
+    public function sendSms(Request $request, ShopifyOrder $order): RedirectResponse
+    {
+        if (! $this->customerMessages->smsConfigured()) {
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', 'SMS ayarları tanımlı değil. Ayarlar → SMS bölümünü doldurun.');
+        }
+
+        $validated = $request->validate([
+            'sms_mode' => ['required', 'in:template,manual'],
+            'template_slug' => ['nullable', 'string', 'max:100'],
+            'manual_message' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if (! filled($order->customer_phone)) {
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', 'Siparişte müşteri telefonu yok.');
+        }
+
+        try {
+            $notification = $this->customerMessages->sendOrderSms(
+                $order,
+                $validated['sms_mode'],
+                $validated['manual_message'] ?? null,
+                $validated['template_slug'] ?? null
+            );
+
+            if ($notification->status === 'failed') {
+                return redirect()
+                    ->route('orders.show', $order)
+                    ->with('error', 'SMS gönderilemedi: '.$notification->reportMessage());
+            }
+
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('success', 'SMS gönderildi ve kayıtlara işlendi.');
+        } catch (Throwable $e) {
+            report($e);
+
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', $e->getMessage());
         }
     }
 

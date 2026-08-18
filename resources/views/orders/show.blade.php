@@ -203,6 +203,85 @@
                 </form>
             </div>
         </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-lg-6">
+            <div class="eticart-card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h2 class="h5 mb-1">SMS bildirimi</h2>
+                        <p class="eticart-muted small mb-0">Müşteriye manuel veya şablon SMS gönderin.</p>
+                    </div>
+                    @if (! $smsConfigured)
+                        <x-badge type="warning">SMS kapalı</x-badge>
+                    @endif
+                </div>
+
+                @if ($orderSms->isNotEmpty())
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr class="eticart-muted small">
+                                    <th>Tarih</th>
+                                    <th>Durum</th>
+                                    <th>Alıcı</th>
+                                    <th>Metin</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($orderSms as $sms)
+                                    <tr>
+                                        <td class="small">{{ optional($sms->sent_at ?? $sms->created_at)->format('d.m.Y H:i') }}</td>
+                                        <td>
+                                            @if ($sms->status === 'sent')
+                                                <x-badge type="success">{{ $sms->statusLabel() }}</x-badge>
+                                            @elseif ($sms->status === 'failed')
+                                                <x-badge type="danger">{{ $sms->statusLabel() }}</x-badge>
+                                            @else
+                                                <x-badge type="warning">{{ $sms->statusLabel() }}</x-badge>
+                                            @endif
+                                        </td>
+                                        <td class="small">{{ $sms->recipient }}</td>
+                                        <td class="small eticart-muted">{{ \Illuminate\Support\Str::limit($sms->body, 80) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <p class="eticart-muted">Bu sipariş için henüz SMS gönderilmedi.</p>
+                @endif
+
+                <form method="POST" action="{{ route('orders.sms.send', $order) }}">
+                    @csrf
+                    <div class="mb-2">
+                        <label class="form-label">Gönderim</label>
+                        <select name="sms_mode" class="form-select" id="orderSmsMode" @disabled(! $smsConfigured || ! filled($order->customer_phone))>
+                            <option value="template">Şablon</option>
+                            <option value="manual">Manuel</option>
+                        </select>
+                    </div>
+                    <div class="mb-2" id="orderSmsTemplateWrap">
+                        <select name="template_slug" class="form-select" @disabled(! $smsConfigured || ! filled($order->customer_phone))>
+                            <option value="order-confirmation-sms">Sipariş Onayı SMS</option>
+                            <option value="shipment-sms">Kargo SMS</option>
+                        </select>
+                    </div>
+                    <div class="mb-2 d-none" id="orderSmsManualWrap">
+                        <textarea name="manual_message" rows="3" class="form-control" maxlength="1000" placeholder="SMS metni" @disabled(! $smsConfigured || ! filled($order->customer_phone))></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary btn-sm" @disabled(! $smsConfigured || ! filled($order->customer_phone))>
+                        <i class="bi bi-phone me-1"></i> SMS gönder
+                    </button>
+                </form>
+                @if (! $smsConfigured)
+                    <div class="form-text mt-2">SMS ayarları boş — Ayarlar → SMS.</div>
+                @elseif (! filled($order->customer_phone))
+                    <div class="form-text mt-2">Müşteri telefonu yok.</div>
+                @endif
+            </div>
+        </div>
 
         <div class="col-12 col-lg-6">
             <div class="eticart-card p-3 h-100">
@@ -419,6 +498,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     select?.addEventListener('change', toggle);
     toggle();
+
+    const smsMode = document.getElementById('orderSmsMode');
+    const smsTemplateWrap = document.getElementById('orderSmsTemplateWrap');
+    const smsManualWrap = document.getElementById('orderSmsManualWrap');
+    const toggleSmsMode = () => {
+        const manual = smsMode?.value === 'manual';
+        smsTemplateWrap?.classList.toggle('d-none', manual);
+        smsManualWrap?.classList.toggle('d-none', !manual);
+    };
+    smsMode?.addEventListener('change', toggleSmsMode);
+    toggleSmsMode();
 });
 </script>
 @endpush

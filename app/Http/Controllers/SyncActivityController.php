@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\SyncActivity;
+use App\Services\LogRetentionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -107,7 +108,15 @@ class SyncActivityController extends Controller
         $type = $request->string('type')->toString();
         $q = $request->string('q')->toString();
 
-        $query = SyncActivity::query()->latest('id');
+        try {
+            app(LogRetentionService::class)->pruneDatabase();
+        } catch (\Throwable) {
+        }
+
+        $retentionDays = LogRetentionService::RETENTION_DAYS;
+        $query = SyncActivity::query()
+            ->where('created_at', '>=', now()->subDays($retentionDays))
+            ->latest('id');
 
         if ($status !== '') {
             $query->where('status', $status);
@@ -124,6 +133,7 @@ class SyncActivityController extends Controller
 
         return view('sync-history.index', [
             'activities' => $query->paginate(30)->withQueryString(),
+            'retentionDays' => $retentionDays,
             'status' => $status,
             'type' => $type,
             'search' => $q,

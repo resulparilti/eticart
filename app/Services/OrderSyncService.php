@@ -410,6 +410,7 @@ class OrderSyncService
                     'product_title' => (string) ($lineItem['title'] ?? 'Ürün'),
                     'variant_title' => $lineItem['variant_title'] ?? null,
                     'sku' => $lineItem['sku'] ?? null,
+                    'barcode' => $lineItem['barcode'] ?? null,
                     'quantity' => (int) ($lineItem['quantity'] ?? 1),
                     'price' => (float) ($lineItem['price'] ?? 0),
                 ]);

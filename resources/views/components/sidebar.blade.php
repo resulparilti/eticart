@@ -3,6 +3,7 @@
         ['route' => 'dashboard', 'label' => 'Dashboard', 'icon' => 'bi-speedometer2'],
         ['route' => 'orders.index', 'label' => 'Siparişler', 'icon' => 'bi-bag-check', 'fallback' => '#'],
         ['route' => 'customers.index', 'label' => 'Müşteriler', 'icon' => 'bi-people', 'fallback' => '#'],
+        ['route' => 'messages.send', 'label' => 'Mesaj Gönder', 'icon' => 'bi-chat-dots', 'fallback' => '#'],
         ['route' => 'products.index', 'label' => 'Ürünler', 'icon' => 'bi-box-seam', 'fallback' => '#'],
         ['route' => 'shipments.index', 'label' => 'Kargo', 'icon' => 'bi-truck', 'fallback' => '#'],
         ['route' => 'notifications.index', 'label' => 'Bilgilendirmeler', 'icon' => 'bi-envelope-paper', 'fallback' => '#'],
