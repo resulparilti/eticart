@@ -202,4 +202,43 @@ class UyumSoftServiceTest extends TestCase
         $this->assertSame(1, $normalized['variant_info']['variants'][0]['stock']);
         $this->assertSame(11, $normalized['variant_info']['variants'][1]['stock']);
     }
+
+    public function test_cloud_create_sales_order_and_find_invoice(): void
+    {
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+            'services.uyumsoft.branch_code' => '001',
+            'services.uyumsoft.warehouse_id' => 'A001',
+        ]);
+
+        Http::fake([
+            'tenant.eko.uyumcloud.com/UyumApi/v1/GNL/UyumLogin' => Http::response([
+                'statusCode' => 200,
+                'result' => [
+                    'access_token' => 'token-abc',
+                    'uyumSecretKey' => 'secret-key',
+                ],
+            ], 200),
+            'tenant.eko.uyumcloud.com/UyumApi/v1/PSM/SaveOrderM' => Http::response([
+                'statusCode' => 200,
+                'result' => ['id' => 44, 'docNo' => 'SH1002'],
+            ], 200),
+            'tenant.eko.uyumcloud.com/UyumApi/v1/FIN/GetInvoiceMList' => Http::response([
+                'statusCode' => 200,
+                'result' => [
+                    ['id' => 9, 'docNo' => 'SH1002', 'invoiceNo' => 'EA-1'],
+                ],
+            ], 200),
+        ]);
+
+        $service = new UyumSoftService();
+        $created = $service->createSalesOrder(['docNo' => 'SH1002', 'entityCode' => 'ETICARET']);
+        $this->assertSame(44, data_get($created, 'result.id'));
+
+        $invoice = $service->findInvoiceForOrder('SH1002', '#1002');
+        $this->assertNotNull($invoice);
+        $this->assertSame('EA-1', $invoice['invoiceNo']);
+    }
 }

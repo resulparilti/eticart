@@ -27,5 +27,10 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="UYUMSOFT_API_USER" value=""/>
+        <env name="UYUMSOFT_API_PASSWORD" value=""/>
+        <env name="UYUMSOFT_BASE_URL" value=""/>
+        <env name="UYUMSOFT_WAREHOUSE_ID" value=""/>
+        <env name="UYUMSOFT_BRANCH_CODE" value=""/>
     </php>
 </phpunit>

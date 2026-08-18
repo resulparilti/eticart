@@ -47,6 +47,11 @@
                 <input type="url" name="uyumsoft_base_url" class="form-control" value="{{ old('uyumsoft_base_url', $settings['uyumsoft_base_url'] ?? '') }}" placeholder="https://api-firma.eko.uyumcloud.com">
                 <div class="form-text">Panelde kaydettiğiniz URL kullanılır; .env içindeki varsayılan adresin önüne geçer.</div>
             </div>
+            <div class="mb-3">
+                <label class="form-label">E-ticaret cari kodu</label>
+                <input type="text" name="uyumsoft_ecommerce_entity_code" class="form-control" value="{{ old('uyumsoft_ecommerce_entity_code', $settings['uyumsoft_ecommerce_entity_code'] ?? '') }}" placeholder="Örn. ETICARET">
+                <div class="form-text">Shopify satışlarının UyumSoft’a sipariş olarak yazılacağı cari / müşteri kodu. Boşsa sipariş gönderilmez.</div>
+            </div>
 
             <button type="submit" class="btn btn-primary">Kaydet</button>
         </form>

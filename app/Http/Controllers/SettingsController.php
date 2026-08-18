@@ -219,6 +219,7 @@ class SettingsController extends Controller
             'uyumsoft_warehouse_id' => ['nullable', 'string', 'max:100'],
             'uyumsoft_branch_code' => ['nullable', 'string', 'max:100'],
             'uyumsoft_base_url' => ['nullable', 'url', 'max:255'],
+            'uyumsoft_ecommerce_entity_code' => ['nullable', 'string', 'max:100'],
         ]);
 
         $this->saveMany($validated, 'uyumsoft', [
@@ -227,6 +228,7 @@ class SettingsController extends Controller
             'uyumsoft_warehouse_id' => 'UyumSoft Depo Kodu',
             'uyumsoft_branch_code' => 'UyumSoft İşyeri Kodu',
             'uyumsoft_base_url' => 'UyumSoft Base URL',
+            'uyumsoft_ecommerce_entity_code' => 'UyumSoft E-ticaret Cari Kodu',
         ]);
 
         return back()->with('success', 'UyumSoft ayarları kaydedildi.');
@@ -865,11 +867,12 @@ class SettingsController extends Controller
             'sync_products_interval' => ['required', 'integer', 'in:15,30,60,120'],
             'sync_stock_interval' => ['required', 'integer', 'in:15,30,60'],
             'sync_cargo_interval' => ['required', 'integer', 'in:15,30,60,120'],
+            'sync_uyumsoft_orders_interval' => ['required', 'integer', 'in:15,30,60'],
             'auto_create_shipment' => ['nullable', 'boolean'],
             'auto_send_tracking' => ['nullable', 'boolean'],
         ]);
 
-        foreach (['sync_orders_interval', 'sync_stock_interval', 'sync_cargo_interval'] as $intervalKey) {
+        foreach (['sync_orders_interval', 'sync_stock_interval', 'sync_cargo_interval', 'sync_uyumsoft_orders_interval'] as $intervalKey) {
             if ((int) $validated[$intervalKey] < $minCron) {
                 $validated[$intervalKey] = $minCron;
             }
@@ -886,6 +889,7 @@ class SettingsController extends Controller
             'sync_products_interval' => 'Ürün Sync (dk)',
             'sync_stock_interval' => 'Stok Sync (dk)',
             'sync_cargo_interval' => 'Kargo Sync (dk)',
+            'sync_uyumsoft_orders_interval' => 'UyumSoft Sipariş Sync (dk)',
             'auto_create_shipment' => 'Otomatik Kargo Oluştur',
             'auto_send_tracking' => 'Otomatik Tracking Gönder',
         ]);
@@ -894,6 +898,17 @@ class SettingsController extends Controller
         SyncJob::query()->where('job_type', 'product_sync')->update(['interval_minutes' => (int) $validated['sync_products_interval']]);
         SyncJob::query()->where('job_type', 'stock_sync')->update(['interval_minutes' => (int) $validated['sync_stock_interval']]);
         SyncJob::query()->where('job_type', 'cargo_tracking')->update(['interval_minutes' => (int) $validated['sync_cargo_interval']]);
+        SyncJob::query()->firstOrCreate(
+            ['job_type' => 'uyumsoft_order_sync'],
+            [
+                'interval_minutes' => (int) $validated['sync_uyumsoft_orders_interval'],
+                'status' => 'idle',
+                'is_active' => true,
+            ]
+        );
+        SyncJob::query()->where('job_type', 'uyumsoft_order_sync')->update([
+            'interval_minutes' => (int) $validated['sync_uyumsoft_orders_interval'],
+        ]);
 
         return back()->with('success', 'Senkronizasyon ayarları kaydedildi.');
     }

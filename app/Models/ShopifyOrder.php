@@ -44,6 +44,11 @@ class ShopifyOrder extends Model
         'synced_at',
         'shopify_needs_push',
         'shopify_pushed_at',
+        'uyumsoft_order_id',
+        'uyumsoft_invoice_id',
+        'uyumsoft_invoice_no',
+        'uyumsoft_pushed_at',
+        'uyumsoft_last_error',
     ];
 
     /**
@@ -57,6 +62,7 @@ class ShopifyOrder extends Model
         'invoice_uploaded_at' => 'datetime',
         'shopify_needs_push' => 'boolean',
         'shopify_pushed_at' => 'datetime',
+        'uyumsoft_pushed_at' => 'datetime',
     ];
 
     /**
@@ -150,6 +156,27 @@ class ShopifyOrder extends Model
     public function markNeedsShopifyPush(): void
     {
         $this->forceFill(['shopify_needs_push' => true])->save();
+    }
+
+    /**
+     * Shopify satışları henüz UyumSoft’a yazılmamış siparişler.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<ShopifyOrder>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<ShopifyOrder>
+     */
+    public function scopeNeedsUyumsoftPush($query)
+    {
+        return $query
+            ->whereNull('uyumsoft_order_id')
+            ->whereHas('items')
+            ->where(function ($builder): void {
+                $builder->whereNull('fulfillment_status')
+                    ->orWhereNotIn('fulfillment_status', ['cancelled', 'restocked']);
+            })
+            ->where(function ($builder): void {
+                $builder->whereNull('payment_status')
+                    ->orWhereNotIn('payment_status', ['refunded', 'voided']);
+            });
     }
 
     /**

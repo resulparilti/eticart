@@ -78,6 +78,15 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">UyumSoft sipariş / fatura (dk)</label>
+                        <select name="sync_uyumsoft_orders_interval" class="form-select" required>
+                            @foreach ([15, 30, 60] as $min)
+                                <option value="{{ $min }}" @selected((int) old('sync_uyumsoft_orders_interval', $settings['sync_uyumsoft_orders_interval'] ?? $cronMin) === $min)>{{ $min }}</option>
+                            @endforeach
+                        </select>
+                        <div class="form-text">Shopify’dan çekilen yeni satışlar bu aralıkla UyumSoft’a yazılır; fatura oluşmuşsa PDF de çekilir.</div>
+                    </div>
 
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" name="auto_create_shipment" value="1" id="auto_create_shipment" @checked(($settings['auto_create_shipment'] ?? '0') === '1')>
@@ -99,6 +108,10 @@
                     Sunucuda cron ile <code>php artisan schedule:run</code> çalışmalıdır (en az {{ $cronMin }} dk).
                     Aynı tetiklemede kuyruk işleri de işlenir; ayrı worker gerekmez.
                     Her tarama <strong>İşlem Geçmişi</strong> ve senkron loglarına yazılır.
+                </p>
+                <p class="small eticart-muted mb-2">
+                    Shopify siparişleri önce panele alınır, ardından UyumSoft’a satış olarak işlenir.
+                    UyumSoft’ta o siparişe fatura kesilmişse senkron sırasında PDF de buraya gelir.
                 </p>
                 <p class="small eticart-muted mb-0">
                     Yurtiçi Kargo standart SOAP API’sinde sipariş durumu için webhook yoktur.

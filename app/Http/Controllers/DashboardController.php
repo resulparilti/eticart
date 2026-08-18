@@ -41,6 +41,7 @@ class DashboardController extends Controller
                         'product_sync' => 'UyumSoft Ürün',
                         'stock_sync' => 'Stok Sync',
                         'cargo_tracking' => 'Kargo Tracking',
+                        'uyumsoft_order_sync' => 'UyumSoft Sipariş',
                         default => $job->job_type,
                     },
                     'status' => $job->status,
@@ -55,6 +56,7 @@ class DashboardController extends Controller
                 ['name' => 'UyumSoft Ürün', 'status' => 'pending', 'last_run' => null],
                 ['name' => 'Stok Sync', 'status' => 'pending', 'last_run' => null],
                 ['name' => 'Kargo Tracking', 'status' => 'pending', 'last_run' => null],
+                ['name' => 'UyumSoft Sipariş', 'status' => 'pending', 'last_run' => null],
             ];
         }
 

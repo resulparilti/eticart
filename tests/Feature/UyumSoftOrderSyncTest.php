@@ -1,0 +1,284 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use App\Models\Setting;
+use App\Models\ShopifyOrder;
+use App\Models\ShopifyOrderItem;
+use App\Models\SyncJob;
+use App\Models\User;
+use App\Services\UyumSoftOrderSyncService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
+
+class UyumSoftOrderSyncTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+            'services.uyumsoft.branch_code' => '001',
+            'services.uyumsoft.warehouse_id' => 'A001',
+        ]);
+
+        Setting::setValue('uyumsoft_api_user', 'WEBSERVIS', 'uyumsoft');
+        Setting::setValue('uyumsoft_api_password', 'secret', 'uyumsoft');
+        Setting::setValue('uyumsoft_base_url', 'https://tenant.eko.uyumcloud.com', 'uyumsoft');
+        Setting::setValue('uyumsoft_branch_code', '001', 'uyumsoft');
+        Setting::setValue('uyumsoft_warehouse_id', 'A001', 'uyumsoft');
+        Setting::setValue('uyumsoft_ecommerce_entity_code', 'ETICARET', 'uyumsoft');
+    }
+
+    public function test_new_shopify_order_is_pushed_and_invoice_pdf_is_attached(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi();
+
+        $order = $this->makeOrder();
+
+        $result = app(UyumSoftOrderSyncService::class)->sync(10);
+
+        $this->assertSame(1, $result['pushed']);
+        $this->assertSame(1, $result['invoices']);
+        $this->assertSame(0, $result['errors']);
+
+        $order->refresh();
+        $this->assertSame('98765', $order->uyumsoft_order_id);
+        $this->assertSame('555', $order->uyumsoft_invoice_id);
+        $this->assertSame('INV-1', $order->uyumsoft_invoice_no);
+        $this->assertNotNull($order->invoice_path);
+        $this->assertTrue(Storage::disk('public')->exists($order->invoice_path));
+        $this->assertNotNull($order->uyumsoft_pushed_at);
+
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'PSM/SaveOrderM'));
+    }
+
+    public function test_existing_uyumsoft_order_is_not_created_again(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi();
+
+        $order = $this->makeOrder([
+            'uyumsoft_order_id' => '98765',
+            'uyumsoft_pushed_at' => now()->subDay(),
+        ]);
+
+        $result = app(UyumSoftOrderSyncService::class)->syncOrder($order);
+
+        $this->assertFalse($result['pushed']);
+        $this->assertTrue($result['invoice']);
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'SaveOrder'));
+    }
+
+    public function test_cancelled_order_is_not_pushed(): void
+    {
+        $this->fakeCloudApi();
+        $order = $this->makeOrder(['fulfillment_status' => 'cancelled']);
+
+        $result = app(UyumSoftOrderSyncService::class)->sync(10);
+
+        $this->assertSame(0, $result['pushed']);
+        $order->refresh();
+        $this->assertNull($order->uyumsoft_order_id);
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'SaveOrder'));
+    }
+
+    public function test_order_page_can_trigger_uyumsoft_sync(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi();
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $order = $this->makeOrder();
+
+        $this->actingAs($user)
+            ->get(route('orders.show', $order))
+            ->assertOk()
+            ->assertSee('UyumSoft');
+
+        $this->actingAs($user)
+            ->post(route('orders.uyumsoft-sync', $order))
+            ->assertRedirect(route('orders.show', $order));
+
+        $order->refresh();
+        $this->assertNotNull($order->uyumsoft_order_id);
+        $this->assertNotNull($order->invoice_path);
+    }
+
+    public function test_cron_skips_uyumsoft_job_until_interval_elapsed(): void
+    {
+        SyncJob::query()->create([
+            'job_type' => 'order_sync',
+            'interval_minutes' => 15,
+            'is_active' => false,
+            'status' => 'idle',
+        ]);
+        SyncJob::query()->create([
+            'job_type' => 'stock_sync',
+            'interval_minutes' => 15,
+            'is_active' => false,
+            'status' => 'idle',
+        ]);
+        SyncJob::query()->create([
+            'job_type' => 'product_sync',
+            'interval_minutes' => 30,
+            'is_active' => false,
+            'status' => 'idle',
+        ]);
+        SyncJob::query()->create([
+            'job_type' => 'cargo_tracking',
+            'interval_minutes' => 15,
+            'is_active' => false,
+            'status' => 'idle',
+        ]);
+        SyncJob::query()->create([
+            'job_type' => 'uyumsoft_order_sync',
+            'interval_minutes' => 15,
+            'is_active' => true,
+            'status' => 'idle',
+            'last_run' => now()->subMinutes(3),
+            'next_run' => now()->addMinutes(12),
+        ]);
+
+        $this->artisan('eticart:cron-run')
+            ->expectsOutputToContain('skip uyumsoft_order_sync')
+            ->assertSuccessful();
+    }
+
+    public function test_cron_runs_uyumsoft_job_when_due(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi();
+        $this->makeOrder();
+
+        foreach (['order_sync', 'stock_sync', 'product_sync', 'cargo_tracking'] as $type) {
+            SyncJob::query()->create([
+                'job_type' => $type,
+                'interval_minutes' => 15,
+                'is_active' => false,
+                'status' => 'idle',
+            ]);
+        }
+
+        SyncJob::query()->create([
+            'job_type' => 'uyumsoft_order_sync',
+            'interval_minutes' => 15,
+            'is_active' => true,
+            'status' => 'idle',
+            'last_run' => now()->subMinutes(20),
+            'next_run' => now()->subMinutes(5),
+        ]);
+
+        $this->artisan('eticart:cron-run')
+            ->expectsOutputToContain('ok uyumsoft_order_sync')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('shopify_orders', [
+            'order_number' => '#1002',
+            'uyumsoft_order_id' => '98765',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    private function makeOrder(array $overrides = []): ShopifyOrder
+    {
+        $order = ShopifyOrder::query()->create(array_merge([
+            'shopify_order_id' => '1002',
+            'order_number' => '#1002',
+            'customer_name' => 'Ayşe',
+            'customer_email' => 'ayse@example.com',
+            'shipping_address' => 'Test Mah. No 1',
+            'shipping_city' => 'Kadıköy',
+            'shipping_province' => 'İstanbul',
+            'shipping_zip' => '34710',
+            'total_price' => 199.90,
+            'currency' => 'TRY',
+            'payment_status' => 'paid',
+            'fulfillment_status' => 'unfulfilled',
+            'shopify_created_at' => now()->subHour(),
+            'synced_at' => now(),
+        ], $overrides));
+
+        ShopifyOrderItem::query()->create([
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '11',
+            'product_title' => 'Bluz',
+            'variant_title' => 'Siyah / M',
+            'sku' => 'BLZ-001',
+            'quantity' => 1,
+            'price' => 199.90,
+        ]);
+
+        return $order->fresh(['items']) ?? $order;
+    }
+
+    private function fakeCloudApi(): void
+    {
+        Http::fake(function ($request) {
+            $url = $request->url();
+
+            if (str_contains($url, 'GNL/UyumLogin')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'access_token' => 'token-abc',
+                        'uyumSecretKey' => 'secret-key',
+                    ],
+                ], 200);
+            }
+
+            if (str_contains($url, 'GetInvoicePdf') || str_contains($url, 'GetInvoiceMPdf') || str_contains($url, 'GetDocumentPdf')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'pdf' => base64_encode('%PDF-1.4 test invoice'),
+                    ],
+                ], 200);
+            }
+
+            if (str_contains($url, 'GetInvoice')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        [
+                            'id' => 555,
+                            'docNo' => 'SH1002',
+                            'invoiceNo' => 'INV-1',
+                            'note1' => 'Shopify #1002',
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if (str_contains($url, 'GetOrder')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [],
+                ], 200);
+            }
+
+            if (str_contains($url, 'SaveOrder')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'id' => 98765,
+                        'docNo' => 'SH1002',
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['statusCode' => 404, 'message' => 'not found'], 404);
+        });
+    }
+}

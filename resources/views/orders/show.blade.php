@@ -108,9 +108,33 @@
                     <x-status-badge group="payment" :value="$order->payment_status" />
                 </div>
                 <div class="d-flex justify-content-between mt-2">
-                    <span class="eticart-muted">Sipariş durumu</span>
-                    <x-status-badge group="fulfillment" :value="$order->fulfillment_status" />
+                    <span class="eticart-muted">UyumSoft</span>
+                    <span>
+                        @if ($order->uyumsoft_order_id)
+                            {{ $order->uyumsoft_order_id }}
+                            @if ($order->uyumsoft_pushed_at)
+                                <span class="eticart-muted">({{ $order->uyumsoft_pushed_at->format('d.m.Y H:i') }})</span>
+                            @endif
+                        @else
+                            Bekliyor
+                        @endif
+                    </span>
                 </div>
+                @if ($order->uyumsoft_invoice_no)
+                    <div class="d-flex justify-content-between mt-2">
+                        <span class="eticart-muted">UyumSoft fatura</span>
+                        <span>{{ $order->uyumsoft_invoice_no }}</span>
+                    </div>
+                @endif
+                @if ($order->uyumsoft_last_error)
+                    <div class="alert alert-warning small mt-3 mb-0">{{ $order->uyumsoft_last_error }}</div>
+                @endif
+                <form method="POST" action="{{ route('orders.uyumsoft-sync', $order) }}" class="mt-3">
+                    @csrf
+                    <button type="submit" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-cloud-upload me-1"></i> UyumSoft’a gönder / fatura çek
+                    </button>
+                </form>
             </div>
         </div>
     </div>
@@ -159,7 +183,7 @@
                         <button type="submit" class="btn btn-outline-danger btn-sm">Faturayı sil</button>
                     </form>
                 @else
-                    <p class="eticart-muted">Henüz fatura yüklenmedi.</p>
+                    <p class="eticart-muted">Henüz fatura yüklenmedi. UyumSoft’ta kesilmişse senkron ile otomatik gelir.</p>
                 @endif
 
                 <form method="POST" action="{{ route('orders.invoice.upload', $order) }}" enctype="multipart/form-data" class="mt-3">

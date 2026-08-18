@@ -33,7 +33,7 @@
                 <label class="form-label">Tip</label>
                 <select name="type" class="form-select">
                     <option value="">Tümü</option>
-                    @foreach (['order_sync' => 'Sipariş', 'product_sync' => 'Ürün', 'stock_sync' => 'Stok', 'cargo_tracking' => 'Kargo'] as $value => $label)
+                    @foreach (['order_sync' => 'Sipariş', 'uyumsoft_order_sync' => 'UyumSoft sipariş', 'product_sync' => 'Ürün', 'stock_sync' => 'Stok', 'cargo_tracking' => 'Kargo'] as $value => $label)
                         <option value="{{ $value }}" @selected(($report['filters']['type'] ?? '') === $value)>{{ $label }}</option>
                     @endforeach
                 </select>

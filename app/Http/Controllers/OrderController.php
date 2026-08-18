@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\CargoException;
 use App\Exceptions\ShopifyException;
+use App\Exceptions\UyumSoftException;
 use App\Jobs\SyncShopifyOrders;
 use App\Models\CargoCompany;
 use App\Models\Shipment;
@@ -16,6 +17,7 @@ use App\Services\MailService;
 use App\Services\OrderLifecycleService;
 use App\Services\OrderSyncService;
 use App\Services\ShopifyService;
+use App\Services\UyumSoftOrderSyncService;
 use App\Support\ShippingLabelProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -30,6 +32,7 @@ class OrderController extends Controller
     public function __construct(
         private readonly ShopifyService $shopifyService,
         private readonly OrderSyncService $orderSyncService,
+        private readonly UyumSoftOrderSyncService $uyumSoftOrderSyncService,
         private readonly CargoService $cargoService,
         private readonly OrderLifecycleService $orderLifecycle
     ) {
@@ -141,15 +144,16 @@ class OrderController extends Controller
             }
 
             $result = $this->orderSyncService->sync($limit, $status);
+            $uyumMessage = $this->syncPendingToUyumsoft($limit);
 
             $redirect = redirect()->route('orders.index');
+            $message = trim($result['message'].($uyumMessage !== '' ? ' '.$uyumMessage : ''));
 
             if (($result['redacted'] ?? 0) > 0) {
-                return $redirect
-                    ->with('warning', $result['message']);
+                return $redirect->with('warning', $message);
             }
 
-            return $redirect->with('success', $result['message']);
+            return $redirect->with('success', $message);
         } catch (ShopifyException $e) {
             return redirect()
                 ->route('orders.index')
@@ -170,14 +174,15 @@ class OrderController extends Controller
     {
         try {
             $result = $this->orderSyncService->syncOne($order);
+            $uyum = $this->syncOrderToUyumsoft($order->fresh() ?? $order);
 
             $redirect = redirect()->route('orders.show', $order);
+            $message = trim($result['message'].($uyum !== '' ? ' '.$uyum : ''));
             if ($result['success']) {
-                return $redirect->with('success', $result['message']);
+                return $redirect->with('success', $message);
             }
 
-            return $redirect
-                ->with('warning', $result['message']);
+            return $redirect->with('warning', $message);
         } catch (ShopifyException $e) {
             return redirect()
                 ->route('orders.show', $order)
@@ -188,6 +193,30 @@ class OrderController extends Controller
             return redirect()
                 ->route('orders.show', $order)
                 ->with('error', 'Sipariş senkronizasyonu sırasında beklenmeyen bir hata oluştu.');
+        }
+    }
+
+    /**
+     * Push a single Shopify order to UyumSoft and pull its invoice if ready.
+     */
+    public function syncUyumsoft(ShopifyOrder $order): RedirectResponse
+    {
+        try {
+            $result = $this->uyumSoftOrderSyncService->syncOrder($order);
+
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('success', $result['message']);
+        } catch (UyumSoftException $e) {
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            report($e);
+
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', 'UyumSoft senkronu sırasında beklenmeyen bir hata oluştu.');
         }
     }
 
@@ -673,6 +702,36 @@ class OrderController extends Controller
             report($e);
 
             return back()->with('error', 'Kargo iptal edilirken beklenmeyen bir hata oluştu.');
+        }
+    }
+
+    private function syncPendingToUyumsoft(int $limit): string
+    {
+        try {
+            $result = $this->uyumSoftOrderSyncService->sync($limit);
+
+            return $result['message'];
+        } catch (UyumSoftException $e) {
+            return 'UyumSoft: '.$e->getMessage();
+        } catch (Throwable $e) {
+            report($e);
+
+            return 'UyumSoft senkronu başarısız.';
+        }
+    }
+
+    private function syncOrderToUyumsoft(ShopifyOrder $order): string
+    {
+        try {
+            $result = $this->uyumSoftOrderSyncService->syncOrder($order);
+
+            return $result['message'];
+        } catch (UyumSoftException $e) {
+            return 'UyumSoft: '.$e->getMessage();
+        } catch (Throwable $e) {
+            report($e);
+
+            return 'UyumSoft senkronu başarısız.';
         }
     }
 }

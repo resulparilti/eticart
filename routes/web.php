@@ -133,6 +133,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::post('/orders/bulk-print-labels', [OrderController::class, 'bulkPrintLabels'])->name('orders.bulk-print-labels');
     Route::get('/orders/{order}/print-label', [OrderController::class, 'printLabel'])->name('orders.print-label');
     Route::post('/orders/{order}/sync', [OrderController::class, 'syncOne'])->name('orders.sync-one');
+    Route::post('/orders/{order}/uyumsoft-sync', [OrderController::class, 'syncUyumsoft'])->name('orders.uyumsoft-sync');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
     Route::post('/orders/{order}/assign-cargo', [OrderController::class, 'assignCargo'])->name('orders.assign-cargo');

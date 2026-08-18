@@ -14,7 +14,7 @@ return new class extends Migration
     {
         $min = max(15, (int) config('eticart.schedule_cron_minutes', 15));
 
-        foreach (['sync_orders_interval', 'sync_stock_interval', 'sync_cargo_interval'] as $key) {
+        foreach (['sync_orders_interval', 'sync_stock_interval', 'sync_cargo_interval', 'sync_uyumsoft_orders_interval'] as $key) {
             DB::table('settings')
                 ->where('key', $key)
                 ->whereRaw('CAST(value AS UNSIGNED) < ?', [$min])
@@ -27,7 +27,7 @@ return new class extends Migration
             ->update(['value' => (string) max($min, 30)]);
 
         DB::table('sync_jobs')
-            ->whereIn('job_type', ['order_sync', 'stock_sync', 'cargo_tracking'])
+            ->whereIn('job_type', ['order_sync', 'stock_sync', 'cargo_tracking', 'uyumsoft_order_sync'])
             ->where('interval_minutes', '<', $min)
             ->update(['interval_minutes' => $min]);
 

@@ -193,25 +193,157 @@ class UyumSoftService
         ]);
     }
 
+    public function warehouseCode(): string
+    {
+        return $this->warehouseCode;
+    }
+
+    public function branchCode(): string
+    {
+        return $this->branchCode;
+    }
+
+    /**
+     * Create a sales order in UyumSoft / UyumCloud.
+     *
+     * @param  array<string, mixed>  $order
+     * @return array<string, mixed>
+     */
+    public function createSalesOrder(array $order): array
+    {
+        if ($this->isCloudApi) {
+            return $this->cloudRequestFirst(
+                ['PSM/SaveOrderM', 'PSM/SaveOrder', 'SLS/SaveOrderM'],
+                [
+                    'value' => $order,
+                ]
+            );
+        }
+
+        return $this->makeLegacyRequest('POST', 'orders', $order);
+    }
+
+    /**
+     * Find an existing sales order by document / Shopify number.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findSalesOrder(string $docNo, string $shopifyOrderNumber): ?array
+    {
+        $needles = array_values(array_unique(array_filter([
+            $docNo,
+            $shopifyOrderNumber,
+            ltrim($shopifyOrderNumber, '#'),
+        ])));
+
+        if ($this->isCloudApi) {
+            foreach ($needles as $needle) {
+                $response = $this->cloudRequestFirst(
+                    ['PSM/GetOrderMList', 'PSM/GetOrderList'],
+                    [
+                        'value' => array_filter([
+                            'branchCode' => $this->branchCode !== '' ? $this->branchCode : null,
+                            'docNo' => $needle,
+                        ]),
+                        'pageIndex' => 0,
+                        'pageSize' => 20,
+                    ],
+                    true
+                );
+
+                foreach ($this->extractCloudItems($response) as $row) {
+                    if ($this->recordMatchesNeedles($row, $needles)) {
+                        return $row;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        foreach ($needles as $needle) {
+            $response = $this->makeLegacyRequest('GET', 'orders', null, ['docNo' => $needle, 'orderNo' => $needle]);
+            $items = $this->extractList($response, ['orders', 'items', 'data', 'result']);
+            if ($items !== []) {
+                return $items[0];
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Fetch invoices in a date range.
      *
+     * @param  array<string, mixed>  $filter
      * @return array<int, array<string, mixed>>
      */
-    public function getInvoices(string $dateFrom, string $dateTo): array
+    public function getInvoices(string $dateFrom, string $dateTo, array $filter = []): array
     {
         if ($this->isCloudApi) {
-            throw new UyumSoftException('UyumCloud fatura listesi henüz desteklenmiyor.');
+            $response = $this->cloudRequestFirst(
+                ['FIN/GetInvoiceMList', 'FIN/GetInvoiceList', 'PSM/GetInvoiceMList'],
+                [
+                    'value' => array_filter([
+                        'branchCode' => $this->branchCode !== '' ? $this->branchCode : null,
+                        'startDate' => $dateFrom,
+                        'endDate' => $dateTo,
+                        'docDate1' => $dateFrom,
+                        'docDate2' => $dateTo,
+                        'docNo' => $filter['docNo'] ?? null,
+                    ]),
+                    'pageIndex' => 0,
+                    'pageSize' => 100,
+                ],
+                true
+            );
+
+            return $this->extractCloudItems($response);
         }
 
-        $response = $this->makeLegacyRequest('GET', 'invoices', null, [
+        $response = $this->makeLegacyRequest('GET', 'invoices', null, array_merge([
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
             'startDate' => $dateFrom,
             'endDate' => $dateTo,
-        ]);
+        ], $filter));
 
         return $this->extractList($response, ['invoices', 'items', 'data', 'result']);
+    }
+
+    /**
+     * Find an invoice that belongs to a Shopify / ERP order.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findInvoiceForOrder(string $docNo, string $shopifyOrderNumber, ?string $uyumsoftOrderId = null): ?array
+    {
+        $needles = array_values(array_unique(array_filter([
+            $docNo,
+            $shopifyOrderNumber,
+            ltrim($shopifyOrderNumber, '#'),
+            $uyumsoftOrderId,
+        ])));
+
+        $from = now()->subDays(90)->toDateString();
+        $to = now()->addDay()->toDateString();
+
+        foreach ($needles as $needle) {
+            $invoices = $this->getInvoices($from, $to, ['docNo' => $needle]);
+            foreach ($invoices as $invoice) {
+                if ($this->recordMatchesNeedles($invoice, $needles)) {
+                    return $invoice;
+                }
+            }
+        }
+
+        foreach ($this->getInvoices($from, $to) as $invoice) {
+            if ($this->recordMatchesNeedles($invoice, $needles)) {
+                return $invoice;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -222,12 +354,80 @@ class UyumSoftService
     public function getInvoiceDetails(string|int $invoiceId): array
     {
         if ($this->isCloudApi) {
-            throw new UyumSoftException('UyumCloud fatura detayı henüz desteklenmiyor.');
+            $response = $this->cloudRequestFirst(
+                ['FIN/GetInvoiceM', 'FIN/GetInvoice'],
+                [
+                    'value' => [
+                        'id' => $invoiceId,
+                        'invoiceId' => $invoiceId,
+                    ],
+                ],
+                true
+            );
+
+            $items = $this->extractCloudItems($response);
+
+            return $items[0] ?? (is_array($response['result'] ?? null) ? $response['result'] : []);
         }
 
         $response = $this->makeLegacyRequest('GET', "invoices/{$invoiceId}");
 
         return $this->extractItem($response, ['invoice', 'data', 'result', 'item']);
+    }
+
+    /**
+     * Download invoice PDF bytes when UyumSoft exposes it.
+     */
+    public function getInvoicePdf(string|int $invoiceId): ?string
+    {
+        if ($this->isCloudApi) {
+            try {
+                $response = $this->cloudRequestFirst(
+                    ['FIN/GetInvoicePdf', 'FIN/GetInvoiceMPdf', 'GNL/GetDocumentPdf'],
+                    [
+                        'value' => [
+                            'id' => $invoiceId,
+                            'invoiceId' => $invoiceId,
+                        ],
+                    ],
+                    true
+                );
+            } catch (UyumSoftException) {
+                return null;
+            }
+
+            $result = is_array($response['result'] ?? null) ? $response['result'] : $response;
+            $encoded = $result['pdf']
+                ?? $result['file']
+                ?? $result['content']
+                ?? $result['fileContents']
+                ?? $result['data']
+                ?? null;
+
+            if (is_string($encoded) && $encoded !== '') {
+                $decoded = base64_decode($encoded, true);
+
+                return $decoded !== false ? $decoded : $encoded;
+            }
+
+            return null;
+        }
+
+        try {
+            $response = $this->makeLegacyRequest('GET', "invoices/{$invoiceId}/pdf");
+        } catch (UyumSoftException) {
+            return null;
+        }
+
+        $encoded = $response['pdf'] ?? $response['content'] ?? $response['data'] ?? null;
+
+        if (is_string($encoded) && $encoded !== '') {
+            $decoded = base64_decode($encoded, true);
+
+            return $decoded !== false ? $decoded : $encoded;
+        }
+
+        return null;
     }
 
     /**
@@ -736,6 +936,93 @@ class UyumSoftService
         }
 
         return [];
+    }
+
+    /**
+     * Try multiple Cloud endpoints until one exists.
+     *
+     * @param  array<int, string>  $endpoints
+     * @param  array<string, mixed>  $body
+     * @return array<string, mixed>
+     */
+    private function cloudRequestFirst(array $endpoints, array $body, bool $allowEmpty = false): array
+    {
+        $last = null;
+
+        foreach ($endpoints as $endpoint) {
+            try {
+                return $this->cloudRequest($endpoint, $body);
+            } catch (UyumSoftException $e) {
+                $last = $e;
+                if (! $this->isMissingEndpoint($e)) {
+                    throw $e;
+                }
+            }
+        }
+
+        if ($allowEmpty) {
+            return ['result' => []];
+        }
+
+        throw $last ?? new UyumSoftException('UyumCloud sipariş/fatura endpoint’i bulunamadı.');
+    }
+
+    private function isMissingEndpoint(UyumSoftException $e): bool
+    {
+        $status = (int) ($e->getCode() ?: ($e->context()['status'] ?? 0));
+        if (in_array($status, [404, 405, 501], true)) {
+            return true;
+        }
+
+        $haystack = strtolower($e->getMessage().' '.json_encode($e->context(), JSON_UNESCAPED_UNICODE));
+
+        return str_contains($haystack, 'not found')
+            || str_contains($haystack, 'bulunamad')
+            || str_contains($haystack, 'unknown endpoint')
+            || str_contains($haystack, 'does not exist')
+            || str_contains($haystack, 'geçersiz endpoint');
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  array<int, string>  $needles
+     */
+    private function recordMatchesNeedles(array $record, array $needles): bool
+    {
+        $needles = array_values(array_filter(array_map(
+            static fn ($needle): string => strtolower(trim((string) $needle)),
+            $needles
+        )));
+
+        if ($needles === []) {
+            return false;
+        }
+
+        $fields = [
+            $record['docNo'] ?? null,
+            $record['orderNo'] ?? null,
+            $record['invoiceNo'] ?? null,
+            $record['sourceDocNo'] ?? null,
+            $record['orderDocNo'] ?? null,
+            $record['note1'] ?? null,
+            $record['note2'] ?? null,
+            $record['id'] ?? null,
+            $record['orderId'] ?? null,
+            $record['invoiceId'] ?? null,
+        ];
+
+        $haystack = strtolower(implode(' ', array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $fields
+        ))));
+
+        foreach ($needles as $needle) {
+            if ($needle !== '' && str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -24,6 +24,7 @@ class SettingsSeeder extends Seeder
             ['key' => 'uyumsoft_warehouse_id', 'value' => '', 'category' => 'uyumsoft', 'label' => 'UyumSoft Depo Kodu'],
             ['key' => 'uyumsoft_branch_code', 'value' => '', 'category' => 'uyumsoft', 'label' => 'UyumSoft İşyeri Kodu'],
             ['key' => 'uyumsoft_base_url', 'value' => '', 'category' => 'uyumsoft', 'label' => 'UyumSoft Base URL'],
+            ['key' => 'uyumsoft_ecommerce_entity_code', 'value' => '', 'category' => 'uyumsoft', 'label' => 'UyumSoft E-ticaret Cari Kodu'],
 
             ['key' => 'mail_from_address', 'value' => 'noreply@eticart.local', 'category' => 'mail', 'label' => 'Mail From Address'],
             ['key' => 'mail_from_name', 'value' => 'EtiCart', 'category' => 'mail', 'label' => 'Mail From Name'],
@@ -37,6 +38,7 @@ class SettingsSeeder extends Seeder
             ['key' => 'sync_products_interval', 'value' => '30', 'category' => 'sync', 'label' => 'Ürün Sync (dk)'],
             ['key' => 'sync_stock_interval', 'value' => '15', 'category' => 'sync', 'label' => 'Stok Sync (dk)'],
             ['key' => 'sync_cargo_interval', 'value' => '15', 'category' => 'sync', 'label' => 'Kargo Sync (dk)'],
+            ['key' => 'sync_uyumsoft_orders_interval', 'value' => '15', 'category' => 'sync', 'label' => 'UyumSoft Sipariş Sync (dk)'],
             ['key' => 'auto_create_shipment', 'value' => '0', 'category' => 'sync', 'label' => 'Otomatik Kargo Oluştur'],
             ['key' => 'auto_send_tracking', 'value' => '0', 'category' => 'sync', 'label' => 'Otomatik Tracking Gönder'],
         ];

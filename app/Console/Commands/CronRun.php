@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\SyncShopifyOrders;
 use App\Jobs\SyncStock;
+use App\Jobs\SyncUyumSoftOrders;
 use App\Jobs\SyncUyumSoftProducts;
 use App\Jobs\UpdateCargoTracking;
 use App\Models\SyncJob;
@@ -35,16 +36,23 @@ class CronRun extends Command
 
         $tasks = [
             'order_sync' => fn () => SyncShopifyOrders::dispatchSync(),
+            'uyumsoft_order_sync' => fn () => SyncUyumSoftOrders::dispatchSync(),
             'stock_sync' => fn () => SyncStock::dispatchSync(),
             'product_sync' => fn () => SyncUyumSoftProducts::dispatchSync(50, 0, true, true),
             'cargo_tracking' => fn () => UpdateCargoTracking::dispatchSync(),
         ];
 
         $failed = 0;
+        $shopifyRan = false;
 
         foreach ($tasks as $jobType => $runner) {
-            if (! $this->syncJobActive($jobType)) {
-                $this->logLine("skip {$jobType} (pasif)");
+            $skipReason = $this->syncJobSkipReason($jobType);
+            if ($jobType === 'uyumsoft_order_sync' && $skipReason !== null && $skipReason !== 'pasif' && $shopifyRan) {
+                $skipReason = null;
+            }
+
+            if ($skipReason !== null) {
+                $this->logLine("skip {$jobType} ({$skipReason})");
                 continue;
             }
 
@@ -53,6 +61,9 @@ class CronRun extends Command
 
             try {
                 $runner();
+                if ($jobType === 'order_sync') {
+                    $shopifyRan = true;
+                }
                 $seconds = round(microtime(true) - $taskStarted, 1);
                 $this->logLine("ok {$jobType} ({$seconds}s)");
             } catch (Throwable $e) {
@@ -88,14 +99,30 @@ class CronRun extends Command
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 
-    private function syncJobActive(string $jobType): bool
+    private function syncJobSkipReason(string $jobType): ?string
     {
         try {
             $job = SyncJob::query()->where('job_type', $jobType)->first();
+            if ($job === null) {
+                return null;
+            }
 
-            return $job === null || $job->is_active;
+            if (! $job->is_active) {
+                return 'pasif';
+            }
+
+            if ($job->next_run && $job->next_run->isFuture()) {
+                return 'next_run';
+            }
+
+            $interval = max(1, (int) $job->interval_minutes);
+            if ($job->last_run && $job->last_run->copy()->addMinutes($interval)->isFuture()) {
+                return 'interval';
+            }
+
+            return null;
         } catch (Throwable) {
-            return true;
+            return null;
         }
     }
 
