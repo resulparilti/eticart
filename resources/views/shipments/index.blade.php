@@ -1,11 +1,11 @@
 @extends('layouts.app')
 
-@section('title', 'Kargo')
+@section('title', 'Kargolar')
 
 @section('content')
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
-            <h1 class="h3 mb-1">Kargo Gönderileri</h1>
+            <h1 class="h3 mb-1">Kargolar</h1>
             <p class="eticart-muted mb-0">Kargo kayıtlarını yönetin ve takip edin.</p>
         </div>
         <form method="POST" action="{{ route('shipments.sync-tracking') }}">

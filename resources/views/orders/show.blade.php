@@ -6,7 +6,11 @@
     @php
         $cargoShipment = $order->latestCargoShipment();
         $canSendShipmentMail = $cargoShipment && $order->hasInvoice() && filled($order->customer_email);
-        $latestMail = $shipmentMails->first();
+        $customerNotices = $customerNotices ?? collect();
+        $latestCombinedMail = $customerNotices->firstWhere('body', 'shipment-invoice');
+        $suggestedTemplateKey = $suggestedTemplateKey ?? \App\Support\OrderMessageTemplates::suggestedKey($order);
+        $canSms = ($smsConfigured ?? false) && filled($order->customer_phone);
+        $canMail = filled($order->customer_email);
     @endphp
     <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <div>
@@ -129,12 +133,15 @@
                 @if ($order->uyumsoft_last_error)
                     <div class="alert alert-warning small mt-3 mb-0">{{ $order->uyumsoft_last_error }}</div>
                 @endif
-                <form method="POST" action="{{ route('orders.uyumsoft-sync', $order) }}" class="mt-3">
+                <form method="POST" action="{{ route('orders.uyumsoft-sync', $order) }}" class="mt-3"
+                      onsubmit="const btn=this.querySelector('button[type=submit]'); btn.disabled=true; btn.querySelector('.btn-text')?.classList.add('d-none'); btn.querySelector('.btn-loading')?.classList.remove('d-none');">
                     @csrf
                     <button type="submit" class="btn btn-outline-primary btn-sm">
-                        <i class="bi bi-cloud-upload me-1"></i> UyumSoft’a gönder / fatura çek
+                        <span class="btn-text"><i class="bi bi-cloud-upload me-1"></i> UyumSoft’a gönder / fatura çek</span>
+                        <span class="btn-loading d-none"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> İşleniyor…</span>
                     </button>
                 </form>
+                <div class="form-text mt-1">Sonuç sayfa üstünde görünür; ayrıntılar <a href="{{ route('sync-history.index') }}">İşlem Geçmişi</a>’ne yazılır.</div>
             </div>
         </div>
     </div>
@@ -162,7 +169,7 @@
         <div class="col-12 col-lg-6">
             <div class="eticart-card p-3 h-100">
                 <h2 class="h5 mb-1">Fatura belgesi</h2>
-                <p class="eticart-muted small mb-3">Belge saklanır. Fatura linki yalnızca yükleme sırasında notlara yazılır; silince notlardan ve Shopify’dan da kalkar.</p>
+                <p class="eticart-muted small mb-3">UyumSoft e-belgesi dosya olarak saklanmaz; müşteriye gönderilen link fatura indirmeyi portalden yapar. Elle yüklenen PDF’ler yine bu sunucuda durur.</p>
 
                 @if ($order->hasInvoice())
                     <div class="mb-3">
@@ -174,6 +181,9 @@
                         <div class="form-text">
                             {{ $order->invoice_original_name }}
                             · {{ optional($order->invoice_uploaded_at)->format('d.m.Y H:i') }}
+                            @if ($order->uyumsoft_einvoice_uuid && ! $order->hasLocalInvoiceFile())
+                                · portal üzerinden
+                            @endif
                         </div>
                     </div>
                     <form method="POST" action="{{ route('orders.invoice.destroy', $order) }}" class="d-inline"
@@ -210,66 +220,62 @@
             <div class="eticart-card p-3 h-100">
                 <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
                     <div>
-                        <h2 class="h5 mb-1">SMS bildirimi</h2>
-                        <p class="eticart-muted small mb-0">Müşteriye manuel veya şablon SMS gönderin.</p>
+                        <h2 class="h5 mb-1">Müşteri bildirimi</h2>
+                        <p class="eticart-muted small mb-0">Sipariş onay, kargo, fatura, teslim veya iade şablonunu SMS ya da mail olarak kuyruğa alın. Kargo ve fatura için ayrı buton yoktur; ilgili şablonu seçin.</p>
                     </div>
                     @if (! $smsConfigured)
                         <x-badge type="warning">SMS kapalı</x-badge>
                     @endif
                 </div>
 
-                @if ($orderSms->isNotEmpty())
-                    <div class="table-responsive mb-3">
-                        <table class="table table-sm align-middle mb-0">
-                            <thead>
-                                <tr class="eticart-muted small">
-                                    <th>Tarih</th>
-                                    <th>Durum</th>
-                                    <th>Alıcı</th>
-                                    <th>Metin</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($orderSms as $sms)
-                                    <tr>
-                                        <td class="small">{{ optional($sms->sent_at ?? $sms->created_at)->format('d.m.Y H:i') }}</td>
-                                        <td>
-                                            @if ($sms->status === 'sent')
-                                                <x-badge type="success">{{ $sms->statusLabel() }}</x-badge>
-                                            @elseif ($sms->status === 'failed')
-                                                <x-badge type="danger">{{ $sms->statusLabel() }}</x-badge>
-                                            @else
-                                                <x-badge type="warning">{{ $sms->statusLabel() }}</x-badge>
-                                            @endif
-                                        </td>
-                                        <td class="small">{{ $sms->recipient }}</td>
-                                        <td class="small eticart-muted">{{ \Illuminate\Support\Str::limit($sms->body, 80) }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                <form method="POST" action="{{ route('orders.template-message', $order) }}" class="mb-4">
+                    @csrf
+                    <div class="mb-2">
+                        <label class="form-label">Kanal</label>
+                        <select name="channel" class="form-select" id="orderTemplateChannel">
+                            <option value="sms" @selected($canSms) @disabled(! $canSms)>SMS</option>
+                            <option value="mail" @selected(! $canSms && $canMail) @disabled(! $canMail)>Mail</option>
+                        </select>
                     </div>
-                @else
-                    <p class="eticart-muted">Bu sipariş için henüz SMS gönderilmedi.</p>
+                    <div class="mb-2">
+                        <label class="form-label">Şablon</label>
+                        <select name="template_key" class="form-select">
+                            @foreach ($messageTemplates as $template)
+                                <option value="{{ $template['key'] }}" @selected($template['key'] === $suggestedTemplateKey)>{{ $template['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm" @disabled(! $canSms && ! $canMail)>
+                        <i class="bi bi-send me-1"></i> Kuyruğa al ve gönder
+                    </button>
+                    @if (! $canSms && ! $canMail)
+                        <div class="form-text mt-2">Müşteri telefonu ve e-postası yok.</div>
+                    @endif
+                </form>
+
+                @if ($canSendShipmentMail)
+                    <div class="border rounded-3 p-3 mb-4">
+                        <div class="fw-semibold mb-1">Kargo ve faturayı tek mailde gönder</div>
+                        <p class="eticart-muted small mb-2 mb-md-3">Takip bilgisi ile fatura linkini aynı mailde birleştirir. Ayrı kargo veya fatura maili için yukarıdaki şablonları kullanın.</p>
+                        <form method="POST" action="{{ route('orders.send-shipment-mail', $order) }}"
+                              onsubmit="return confirm('Kargo ve fatura maili {{ $order->customer_email }} adresine gidecek. Gönderilsin mi?');">
+                            @csrf
+                            <button type="submit" class="btn btn-outline-secondary btn-sm" @disabled(($mailWaitSeconds ?? 0) > 0)>
+                                <i class="bi bi-envelope-paper me-1"></i>
+                                {{ $latestCombinedMail ? 'Tek maili tekrar gönder' : 'Tek mail gönder' }}
+                            </button>
+                        </form>
+                        @if (($mailWaitSeconds ?? 0) > 0)
+                            <div class="form-text mt-2">Peş peşe gönderim için yaklaşık {{ (int) ceil($mailWaitSeconds / 60) }} dakika bekleyin.</div>
+                        @endif
+                    </div>
                 @endif
 
+                <h3 class="h6">Manuel SMS</h3>
                 <form method="POST" action="{{ route('orders.sms.send', $order) }}">
                     @csrf
                     <div class="mb-2">
-                        <label class="form-label">Gönderim</label>
-                        <select name="sms_mode" class="form-select" id="orderSmsMode" @disabled(! $smsConfigured || ! filled($order->customer_phone))>
-                            <option value="template">Şablon</option>
-                            <option value="manual">Manuel</option>
-                        </select>
-                    </div>
-                    <div class="mb-2" id="orderSmsTemplateWrap">
-                        <select name="template_slug" class="form-select" @disabled(! $smsConfigured || ! filled($order->customer_phone))>
-                            <option value="order-confirmation-sms">Sipariş Onayı SMS</option>
-                            <option value="shipment-sms">Kargo SMS</option>
-                        </select>
-                    </div>
-                    <div class="mb-2 d-none" id="orderSmsManualWrap">
-                        <textarea name="manual_message" rows="3" class="form-control" maxlength="1000" placeholder="SMS metni" @disabled(! $smsConfigured || ! filled($order->customer_phone))></textarea>
+                        <textarea name="manual_message" rows="3" class="form-control" maxlength="1000" placeholder="Şablon dışındaki serbest SMS metni" required @disabled(! $smsConfigured || ! filled($order->customer_phone))></textarea>
                     </div>
                     <button type="submit" class="btn btn-outline-primary btn-sm" @disabled(! $smsConfigured || ! filled($order->customer_phone))>
                         <i class="bi bi-phone me-1"></i> SMS gönder
@@ -287,100 +293,51 @@
             <div class="eticart-card p-3 h-100">
                 <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
                     <div>
-                        <h2 class="h5 mb-1">Kargo + fatura bildirimi</h2>
-                        <p class="eticart-muted small mb-0">Müşteriye giden e-postanın son durumu ve geçmişi.</p>
+                        <h2 class="h5 mb-1">Gönderim geçmişi</h2>
+                        <p class="eticart-muted small mb-0">Bu siparişe ait mail ve SMS kayıtları.</p>
                     </div>
-                    @if ($latestMail?->status === 'sent')
-                        <x-badge type="success">SMTP teslim</x-badge>
-                    @elseif ($latestMail?->status === 'failed')
-                        <x-badge type="danger">Gönderilemedi</x-badge>
-                    @elseif ($latestMail)
-                        <x-badge type="warning">Beklemede</x-badge>
-                    @else
-                        <x-badge type="secondary">Henüz gönderilmedi</x-badge>
-                    @endif
+                    <a href="{{ route('notifications.index', ['q' => $order->order_number]) }}" class="small text-decoration-none">Tüm kayıtlar</a>
                 </div>
 
-                @if ($latestMail)
-                    @php $mailReport = $latestMail->mailReport(); @endphp
-                    <dl class="row small mb-3">
-                        <dt class="col-4 eticart-muted">Alıcı</dt>
-                        <dd class="col-8">{{ $latestMail->recipient }}</dd>
-                        <dt class="col-4 eticart-muted">Son deneme</dt>
-                        <dd class="col-8">{{ optional($latestMail->sent_at ?? $latestMail->created_at)->format('d.m.Y H:i') }}</dd>
-                        <dt class="col-4 eticart-muted">From</dt>
-                        <dd class="col-8">{{ $mailReport['from'] ?? '-' }}</dd>
-                        <dt class="col-4 eticart-muted">SMTP</dt>
-                        <dd class="col-8">{{ ($mailReport['mailer'] ?? '-') }} / {{ $mailReport['host'] ?? '-' }}</dd>
-                        <dt class="col-4 eticart-muted">Ek</dt>
-                        <dd class="col-8">{{ $mailReport['attachment'] ?? '-' }}</dd>
-                        <dt class="col-4 eticart-muted">Sonuç</dt>
-                        <dd class="col-8 {{ $latestMail->status === 'failed' ? 'text-danger' : '' }}">
-                            {{ $latestMail->reportMessage() }}
-                        </dd>
-                        @if (filled($mailReport['warning'] ?? null))
-                            <dt class="col-4 eticart-muted">Uyarı</dt>
-                            <dd class="col-8 text-warning">{{ $mailReport['warning'] }}</dd>
-                        @endif
-                    </dl>
-                    <p class="small eticart-muted mb-3">
-                        SMTP teslim, mailin gelen kutusuna düştüğü anlamına gelmez.
-                        Tüm kayıtlar için
-                        <a href="{{ route('notifications.index', ['type' => 'mail', 'q' => $order->customer_email]) }}">Bilgilendirmeler</a>.
-                    </p>
+                @if ($customerNotices->isEmpty())
+                    <p class="eticart-muted mb-0">Bu sipariş için henüz bildirim gönderilmedi.</p>
                 @else
-                    <p class="eticart-muted">Bu sipariş için henüz kargo + fatura maili gönderilmedi.</p>
-                @endif
-
-                @if ($shipmentMails->isNotEmpty())
-                    <div class="table-responsive mb-3">
+                    <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
                                 <tr class="eticart-muted small">
+                                    <th>Kanal</th>
+                                    <th>İçerik</th>
                                     <th>Tarih</th>
                                     <th>Durum</th>
-                                    <th>Alıcı</th>
-                                    <th>Sonuç</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach ($shipmentMails as $mail)
+                                @foreach ($customerNotices as $notice)
                                     <tr>
-                                        <td class="small">{{ optional($mail->sent_at ?? $mail->created_at)->format('d.m.Y H:i') }}</td>
+                                        <td class="small">{{ $notice->channelLabel() }}</td>
+                                        <td class="small">
+                                            {{ $notice->type === 'sms' ? \Illuminate\Support\Str::limit($notice->body, 70) : $notice->templateLabel() }}
+                                        </td>
+                                        <td class="small">{{ optional($notice->sent_at ?? $notice->created_at)->format('d.m.Y H:i') }}</td>
                                         <td>
-                                            @if ($mail->status === 'sent')
-                                                <x-badge type="success">{{ $mail->statusLabel() }}</x-badge>
-                                            @elseif ($mail->status === 'failed')
-                                                <x-badge type="danger">{{ $mail->statusLabel() }}</x-badge>
+                                            @if ($notice->status === 'sent')
+                                                <x-badge type="success">{{ $notice->deliveryLabel() }}</x-badge>
+                                            @elseif ($notice->status === 'failed')
+                                                <x-badge type="danger">{{ $notice->deliveryLabel() }}</x-badge>
                                             @else
-                                                <x-badge type="warning">{{ $mail->statusLabel() }}</x-badge>
+                                                <x-badge type="warning">{{ $notice->deliveryLabel() }}</x-badge>
                                             @endif
                                         </td>
-                                        <td class="small">{{ $mail->recipient }}</td>
-                                        <td class="small {{ $mail->status === 'failed' ? 'text-danger' : 'eticart-muted' }}">{{ \Illuminate\Support\Str::limit($mail->reportMessage(), 80) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
-                @endif
-
-                <form method="POST" action="{{ route('orders.send-shipment-mail', $order) }}"
-                      onsubmit="return confirm('Bu mail {{ $order->customer_email }} adresine gidecek. Gönderilsin mi?');">
-                    @csrf
-                    <button type="submit" class="btn btn-primary btn-sm" @disabled(! $canSendShipmentMail || ($mailWaitSeconds ?? 0) > 0)>
-                        <i class="bi bi-envelope me-1"></i>
-                        {{ $latestMail ? 'Tekrar gönder' : 'Kargo ve fatura maili gönder' }}
-                    </button>
-                </form>
-                @if (($mailWaitSeconds ?? 0) > 0)
-                    <div class="form-text mt-2">
-                        Peş peşe gönderim yapmayınız. Yaklaşık {{ (int) ceil($mailWaitSeconds / 60) }} dakika sonra tekrar gönderebilirsiniz.
-                    </div>
-                @elseif (! $canSendShipmentMail)
-                    <div class="form-text mt-2">Göndermek için kargo, fatura ve müşteri e-postası gerekir.</div>
-                @else
-                    <div class="form-text mt-2">Aynı faturayı farklı adreslere peş peşe göndermeyin; mailler arasında birkaç dakika bekleyin.</div>
+                    @php $latestMail = $customerNotices->firstWhere('type', 'mail'); @endphp
+                    @if ($latestMail && $latestMail->status === 'failed')
+                        <p class="small text-danger mt-3 mb-0">{{ $latestMail->reportMessage() }}</p>
+                    @endif
                 @endif
             </div>
         </div>
@@ -498,17 +455,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     select?.addEventListener('change', toggle);
     toggle();
-
-    const smsMode = document.getElementById('orderSmsMode');
-    const smsTemplateWrap = document.getElementById('orderSmsTemplateWrap');
-    const smsManualWrap = document.getElementById('orderSmsManualWrap');
-    const toggleSmsMode = () => {
-        const manual = smsMode?.value === 'manual';
-        smsTemplateWrap?.classList.toggle('d-none', manual);
-        smsManualWrap?.classList.toggle('d-none', !manual);
-    };
-    smsMode?.addEventListener('change', toggleSmsMode);
-    toggleSmsMode();
 });
 </script>
 @endpush

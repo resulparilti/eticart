@@ -730,18 +730,43 @@ window.eticartOrderCalendar = function eticartOrderCalendar(config = {}) {
 
 Alpine.data('eticartOrderCalendar', window.eticartOrderCalendar);
 
-document.addEventListener('DOMContentLoaded', () => {
-    const toggleBtn = document.getElementById('sidebarToggle');
-    const sidebar = document.getElementById('eticartSidebar');
-    const backdrop = document.getElementById('eticartSidebarBackdrop');
+const ETICART_THEME_KEY = 'eticart-theme';
 
-    // Uygulama yalnızca light tema kullanır.
-    document.documentElement.setAttribute('data-bs-theme', 'light');
+/**
+ * @param {'dark'|'light'} theme
+ */
+window.applyEticartTheme = function applyEticartTheme(theme) {
+    const next = theme === 'dark' ? 'dark' : 'light';
+    const html = document.documentElement;
+    html.setAttribute('data-bs-theme', next);
+    html.style.colorScheme = next;
+    html.style.backgroundColor = next === 'dark' ? '#0b1420' : '#f3f6f9';
+
     try {
-        localStorage.removeItem('eticart-theme');
+        localStorage.setItem(ETICART_THEME_KEY, next);
+        const secure = location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `${ETICART_THEME_KEY}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
     } catch (e) {
         // ignore
     }
+
+    document.querySelectorAll('[data-eticart-theme-toggle]').forEach((button) => {
+        button.setAttribute('aria-label', next === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç');
+        button.setAttribute('title', next === 'dark' ? 'Açık tema' : 'Koyu tema');
+    });
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-eticart-theme-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
+            window.applyEticartTheme(current === 'dark' ? 'light' : 'dark');
+        });
+    });
+
+    const toggleBtn = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('eticartSidebar');
+    const backdrop = document.getElementById('eticartSidebarBackdrop');
 
     const closeSidebar = () => {
         sidebar?.classList.remove('is-open');
@@ -785,5 +810,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+Alpine.data('productMedia', (gallery = []) => ({
+    showThumbs: false,
+    lightboxIndex: -1,
+    gallery: Array.isArray(gallery) ? gallery.filter((url) => typeof url === 'string' && url.trim() !== '') : [],
+    get lightbox() {
+        if (this.lightboxIndex < 0) {
+            return null;
+        }
+
+        return this.gallery[this.lightboxIndex] || null;
+    },
+    get lightboxCount() {
+        return this.gallery.length;
+    },
+    openLightbox(url) {
+        const src = typeof url === 'string' ? url.trim() : '';
+        if (src === '') {
+            return;
+        }
+        let index = this.gallery.indexOf(src);
+        if (index < 0) {
+            this.gallery.push(src);
+            index = this.gallery.length - 1;
+        }
+        this.lightboxIndex = index;
+        document.body.style.overflow = 'hidden';
+    },
+    closeLightbox() {
+        this.lightboxIndex = -1;
+        document.body.style.overflow = '';
+    },
+    prevLightbox() {
+        if (this.lightboxIndex < 0 || this.gallery.length < 2) {
+            return;
+        }
+        this.lightboxIndex = (this.lightboxIndex - 1 + this.gallery.length) % this.gallery.length;
+    },
+    nextLightbox() {
+        if (this.lightboxIndex < 0 || this.gallery.length < 2) {
+            return;
+        }
+        this.lightboxIndex = (this.lightboxIndex + 1) % this.gallery.length;
+    },
+    scrollThumbs(direction) {
+        const track = this.$refs.thumbTrack;
+        if (!track) {
+            return;
+        }
+        const step = Math.max(88, Math.floor(track.clientWidth * 0.7));
+        track.scrollBy({ left: direction * step, behavior: 'smooth' });
+    },
+}));
 
 Alpine.start();

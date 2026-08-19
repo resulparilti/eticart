@@ -22,6 +22,8 @@ class ShopifyProduct extends Model
         'title',
         'description',
         'images',
+        'metafields',
+        'collections',
         'variants',
         'status',
         'handle',
@@ -39,6 +41,8 @@ class ShopifyProduct extends Model
      */
     protected $casts = [
         'images' => 'array',
+        'metafields' => 'array',
+        'collections' => 'array',
         'variants' => 'array',
         'price' => 'decimal:2',
         'price_max' => 'decimal:2',
@@ -82,6 +86,7 @@ class ShopifyProduct extends Model
                 'stock' => (int) ($variant['stock'] ?? 0),
                 'barcode' => $variant['barcode'] ?? null,
                 'inventory_item_id' => $variant['inventory_item_id'] ?? null,
+                'image' => $variant['image'] ?? $variant['image_url'] ?? null,
             ];
         }, $variants));
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\SyncActivity;
 use App\Services\ProductSyncService;
 use App\Services\SyncActivityTracker;
 use Illuminate\Bus\Queueable;
@@ -25,12 +26,25 @@ class SyncStock implements ShouldQueue
 
     public int $timeout = 600;
 
+    public function __construct(
+        public ?int $activityId = null
+    ) {
+    }
+
     /**
      * Execute the job.
      */
     public function handle(ProductSyncService $productSyncService, SyncActivityTracker $tracker): void
     {
-        $tracker->ensureFresh('stock_sync', 'Zamanlanmış stok tarama');
+        if ($this->activityId) {
+            $activity = SyncActivity::query()->find($this->activityId);
+            if ($activity) {
+                $tracker->bind($activity);
+            }
+        } else {
+            $tracker->ensureFresh('stock_sync', 'Zamanlanmış stok tarama');
+        }
+
         $tracker->markRunning('UyumSoft stokları kontrol ediliyor…');
 
         try {
@@ -48,7 +62,21 @@ class SyncStock implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         Log::channel('stack')->error('SyncStock failed', [
+            'activity_id' => $this->activityId,
             'message' => $exception?->getMessage(),
         ]);
+
+        if (! $this->activityId) {
+            return;
+        }
+
+        $activity = SyncActivity::query()->find($this->activityId);
+        if (! $activity || ! $activity->isActive()) {
+            return;
+        }
+
+        $tracker = app(SyncActivityTracker::class);
+        $tracker->bind($activity);
+        $tracker->fail($exception?->getMessage() ?? 'Kuyruk işi başarısız.', $exception);
     }
 }

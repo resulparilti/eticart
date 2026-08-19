@@ -8,6 +8,7 @@ use App\Models\MailTemplate;
 use App\Models\Notification;
 use App\Models\ShopifyOrder;
 use App\Models\SmsTemplate;
+use App\Support\OrderMessageTemplates;
 use App\Services\MailService;
 use App\Services\SmsService;
 use Illuminate\Http\RedirectResponse;
@@ -60,8 +61,8 @@ class NotificationController extends Controller
             'filters' => $request->only(['type', 'status', 'date_from', 'date_to', 'q']),
             'smsBalance' => $this->smsService->getBalance(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
-                ['label' => 'Bilgilendirmeler'],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
+                ['label' => 'Mesaj bilgilendirmeleri'],
             ],
         ]);
     }
@@ -163,12 +164,14 @@ class NotificationController extends Controller
      */
     public function templates(): View
     {
+        OrderMessageTemplates::syncToDatabase();
+
         return view('notifications.templates', [
             'mailTemplates' => MailTemplate::query()->orderBy('name')->get(),
             'smsTemplates' => SmsTemplate::query()->orderBy('name')->get(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
-                ['label' => 'Bilgilendirmeler', 'url' => route('notifications.index')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
+                ['label' => 'Mesaj bilgilendirmeleri', 'url' => route('notifications.index')],
                 ['label' => 'Şablonlar'],
             ],
         ]);
@@ -218,48 +221,5 @@ class NotificationController extends Controller
         return redirect()
             ->route('notifications.templates')
             ->with('success', 'SMS şablonu güncellendi.');
-    }
-
-    /**
-     * Send a test mail/SMS from notifications page.
-     */
-    public function test(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            'channel' => ['required', 'in:mail,sms'],
-            'recipient' => ['required', 'string', 'max:255'],
-            'message' => ['required', 'string'],
-        ]);
-
-        if ($validated['channel'] === 'mail') {
-            $notification = $this->mailService->sendCustom(
-                $validated['recipient'],
-                'EtiCart Test Mail',
-                $validated['message']
-            );
-
-            if ($notification->status === 'failed') {
-                return redirect()
-                    ->route('notifications.index')
-                    ->with('error', 'Test maili başarısız: '.$notification->reportMessage());
-            }
-
-            $report = $notification->mailReport();
-            $redirect = redirect()
-                ->route('notifications.index')
-                ->with('success', $notification->reportMessage());
-
-            if (filled($report['warning'] ?? null)) {
-                return $redirect->with('warning', (string) $report['warning']);
-            }
-
-            return $redirect;
-        }
-
-        $this->smsService->send($validated['recipient'], $validated['message']);
-
-        return redirect()
-            ->route('notifications.index')
-            ->with('success', 'Test SMS gönderildi.');
     }
 }

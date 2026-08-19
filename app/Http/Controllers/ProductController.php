@@ -6,16 +6,17 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ShopifyException;
 use App\Exceptions\UyumSoftException;
+use App\Jobs\ProcessBulkProductAction;
 use App\Jobs\PullShopifyProducts;
 use App\Jobs\SyncStock;
 use App\Jobs\SyncUyumSoftProducts;
 use App\Models\ShopifyProduct;
-use App\Models\SyncActivity;
 use App\Models\UyumSoftProduct;
 use App\Services\ProductSyncService;
 use App\Services\ShopifyService;
 use App\Services\SyncActivityTracker;
 use App\Services\UyumSoftService;
+use App\Support\ShopifyMetafieldFormatter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -45,6 +46,11 @@ class ProductController extends Controller
         $stockFilter = $request->string('stock')->toString();
         $priceMin = $request->input('price_min');
         $priceMax = $request->input('price_max');
+        $perPageOptions = [10, 20, 50, 100];
+        $perPage = (int) $request->integer('per_page', 20);
+        if (! in_array($perPage, $perPageOptions, true)) {
+            $perPage = 20;
+        }
 
         $query = UyumSoftProduct::query()->with('shopifyProduct')->latest();
 
@@ -98,7 +104,18 @@ class ProductController extends Controller
             'stockFilter' => $stockFilter,
             'priceMin' => $priceMin,
             'priceMax' => $priceMax,
-            'products' => $query->paginate(20)->withQueryString(),
+            'perPage' => $perPage,
+            'perPageOptions' => $perPageOptions,
+            'listQuery' => array_filter([
+                'q' => $search !== '' ? $search : null,
+                'status' => $status !== '' ? $status : null,
+                'shopify_status' => $shopifyStatus !== '' ? $shopifyStatus : null,
+                'stock' => $stockFilter !== '' ? $stockFilter : null,
+                'price_min' => ($priceMin !== null && $priceMin !== '') ? $priceMin : null,
+                'price_max' => ($priceMax !== null && $priceMax !== '') ? $priceMax : null,
+                'per_page' => $perPage,
+            ], static fn (mixed $value): bool => $value !== null && $value !== ''),
+            'products' => $query->paginate($perPage)->withQueryString(),
             'counts' => [
                 'all' => UyumSoftProduct::query()->count(),
                 'synced' => UyumSoftProduct::query()->where('synced_to_shopify', true)->count(),
@@ -115,7 +132,7 @@ class ProductController extends Controller
                 ProductSyncService::OPTION_PRICE => 'Sadece fiyat',
             ],
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Ürünler'],
             ],
         ]);
@@ -141,7 +158,7 @@ class ProductController extends Controller
         $validated = $request->validate([
             'product_ids' => ['nullable', 'array'],
             'product_ids.*' => ['integer', 'exists:uyumsoft_products,id'],
-            'action' => ['required', 'in:push_shopify,activate,deactivate,reconcile,export_excel'],
+            'action' => ['required', 'in:push_shopify,pull_shopify,activate,deactivate,reconcile,export_excel'],
             'sync_options' => ['nullable', 'array'],
             'sync_options.*' => ['string', 'in:all,info,images,stock,price'],
         ]);
@@ -153,119 +170,103 @@ class ProductController extends Controller
         }
 
         if ($validated['action'] === 'reconcile') {
-            $activity = $this->activityTracker->start(
+            $uuid = $this->queueBulkProductAction(
+                'reconcile',
                 'product_reconcile',
                 'UyumSoft → Shopify güncelleme kontrolü',
+                [],
+                [],
                 null,
                 ['source' => 'products.bulk']
             );
 
-            $activityId = $activity->id;
-            $uuid = $activity->uuid;
-
-            dispatch(function () use ($activityId): void {
-                $tracker = app(SyncActivityTracker::class);
-                $activity = SyncActivity::query()->find($activityId);
-                if (! $activity) {
-                    return;
-                }
-                $tracker->bind($activity);
-                try {
-                    app(ProductSyncService::class)->syncAllFromUyumSoftAndReconcile(50, true);
-                } catch (\Throwable $e) {
-                    report($e);
-                    $tracker->fail($e->getMessage(), $e);
-                }
-            })->afterResponse();
-
             return back()
-                ->with('success', 'Güncelleme kontrolü arka planda başladı. Sağ alttan takip edebilirsiniz.')
+                ->with('success', 'Güncelleme kontrolü kuyruğa alındı. Sağ alttan takip edebilirsiniz.')
                 ->with('sync_activity_uuid', $uuid);
         }
 
         if ($ids === []) {
-            return back()->with('error', 'Bu işlem için en az bir ürün seçin.');
+            if ($validated['action'] === 'pull_shopify') {
+                $ids = UyumSoftProduct::query()
+                    ->where(function ($query): void {
+                        $query->whereNotNull('shopify_id')
+                            ->orWhere('synced_to_shopify', true);
+                    })
+                    ->pluck('id')
+                    ->all();
+
+                if ($ids === []) {
+                    return back()->with('error', 'Shopify’dan çekilecek eşitlenmiş ürün yok.');
+                }
+            } else {
+                return back()->with('error', 'Bu işlem için en az bir ürün seçin.');
+            }
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+
+        if ($validated['action'] === 'pull_shopify') {
+            $uuid = $this->queueBulkProductAction(
+                'pull_shopify',
+                'shopify_pull',
+                'Shopify’dan güncelle ('.count($ids).' ürün)',
+                $ids,
+                [],
+                count($ids),
+                ['product_ids' => $ids]
+            );
+
+            return back()
+                ->with('success', 'Shopify’dan güncelleme kuyruğa alındı. Sağ alttan takip edebilirsiniz.')
+                ->with('sync_activity_uuid', $uuid);
         }
 
         if ($validated['action'] === 'activate') {
             UyumSoftProduct::query()->whereIn('id', $ids)->update(['is_active' => true]);
-            $activity = $this->activityTracker->start(
+            $uuid = $this->queueBulkProductAction(
+                'activate',
                 'product_status_push',
                 'Shopify aktif durumu ('.count($ids).' ürün)',
+                $ids,
+                [],
                 count($ids)
             );
-            $this->activityTracker->markRunning('Shopify active durumuna yazılıyor…');
-            try {
-                $push = $this->productSyncService->syncActiveStatusToShopify($ids);
-                $this->activityTracker->complete($push['message'], (int) $push['synced'], (int) $push['errors']);
-            } catch (\Throwable $e) {
-                $this->activityTracker->fail($e->getMessage(), $e);
-                $push = ['message' => $e->getMessage()];
-            }
 
-            return back()->with('success', count($ids).' ürün aktifleştirildi. '.$push['message'])
-                ->with('sync_activity_uuid', $activity->uuid);
+            return back()
+                ->with('success', count($ids).' ürün aktifleştirildi. Shopify durumu kuyruğa alındı.')
+                ->with('sync_activity_uuid', $uuid);
         }
 
         if ($validated['action'] === 'deactivate') {
             UyumSoftProduct::query()->whereIn('id', $ids)->update(['is_active' => false]);
-            $activity = $this->activityTracker->start(
+            $uuid = $this->queueBulkProductAction(
+                'deactivate',
                 'product_status_push',
                 'Shopify pasif durumu ('.count($ids).' ürün)',
+                $ids,
+                [],
                 count($ids)
             );
-            $this->activityTracker->markRunning('Shopify draft durumuna yazılıyor…');
-            try {
-                $push = $this->productSyncService->syncActiveStatusToShopify($ids);
-                $this->activityTracker->complete($push['message'], (int) $push['synced'], (int) $push['errors']);
-            } catch (\Throwable $e) {
-                $this->activityTracker->fail($e->getMessage(), $e);
-                $push = ['message' => $e->getMessage()];
-            }
 
-            return back()->with(
-                'success',
-                count($ids).' ürün pasife alındı. '.$push['message']
-            )->with('sync_activity_uuid', $activity->uuid);
+            return back()
+                ->with('success', count($ids).' ürün pasife alındı. Shopify durumu kuyruğa alındı.')
+                ->with('sync_activity_uuid', $uuid);
         }
 
         $options = $validated['sync_options'] ?? [ProductSyncService::OPTION_ALL];
-
-        $activity = $this->activityTracker->start(
+        $uuid = $this->queueBulkProductAction(
+            'push_shopify',
             'shopify_push',
             'Shopify toplu aktarım ('.count($ids).' ürün)',
+            $ids,
+            $options,
             count($ids),
             ['product_ids' => $ids, 'options' => $options]
         );
-        $activityId = $activity->id;
-        $uuid = $activity->uuid;
-        $userId = Auth::id();
-
-        dispatch(function () use ($activityId, $ids, $options, $userId): void {
-            $tracker = app(SyncActivityTracker::class);
-            $activity = SyncActivity::query()->find($activityId);
-            if (! $activity) {
-                return;
-            }
-            $tracker->bind($activity);
-            $tracker->markRunning('Shopify aktarımı başladı…');
-            try {
-                $result = app(ProductSyncService::class)->syncToShopify($ids, $options);
-                $tracker->complete(
-                    $result['message'],
-                    (int) ($result['synced'] ?? 0),
-                    (int) ($result['errors'] ?? 0),
-                    ['skipped' => $result['skipped'] ?? 0, 'user_id' => $userId]
-                );
-            } catch (\Throwable $e) {
-                report($e);
-                $tracker->fail($e->getMessage(), $e);
-            }
-        })->afterResponse();
 
         return redirect()
             ->route('products.index', ['tab' => 'all'])
-            ->with('success', 'Shopify aktarımı arka planda başladı. Sağ alttan takip edebilirsiniz.')
+            ->with('success', 'Shopify aktarımı kuyruğa alındı. Sağ alttan takip edebilirsiniz.')
             ->with('sync_activity_uuid', $uuid);
     }
 
@@ -330,7 +331,7 @@ class ProductController extends Controller
                 ProductSyncService::OPTION_PRICE => 'Sadece fiyat',
             ],
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Ürünler', 'url' => route('products.index')],
                 ['label' => 'Shopify Sync'],
             ],
@@ -349,10 +350,11 @@ class ProductController extends Controller
             'variants' => $product->variantRows(),
             'attributeGroups' => $product->attributeGroups(),
             'images' => $product->imageUrls(),
+            'shopifyMetafields' => $this->formattedMetafields($product->shopifyProduct?->metafields ?? []),
             'shopifyConfigured' => $this->shopifyService->isConfigured(),
             'syncResults' => session('sync_results', []),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Ürünler', 'url' => route('products.index')],
                 ['label' => $product->title],
             ],
@@ -368,7 +370,7 @@ class ProductController extends Controller
             'product' => $product,
             'imagesText' => implode("\n", $product->imageUrls()),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Ürünler', 'url' => route('products.index')],
                 ['label' => $product->title, 'url' => route('products.show', $product)],
                 ['label' => 'Düzenle'],
@@ -391,6 +393,11 @@ class ProductController extends Controller
             'images_text' => ['nullable', 'string', 'max:20000'],
             'image_files' => ['nullable', 'array', 'max:10'],
             'image_files.*' => ['image', 'max:5120'],
+            'variant_image_files' => ['nullable', 'array', 'max:50'],
+            'variant_image_files.*' => ['nullable', 'image', 'max:5120'],
+            'variant_image_urls' => ['nullable', 'array', 'max:50'],
+            'variant_image_urls.*' => ['nullable', 'string', 'max:2000'],
+            'variant_image_remove' => ['nullable', 'array', 'max:50'],
             'is_active' => ['nullable', 'boolean'],
             'push_to_shopify' => ['nullable', 'boolean'],
             'sync_options' => ['nullable', 'array'],
@@ -419,6 +426,42 @@ class ProductController extends Controller
 
         $images = array_values(array_unique($images));
 
+        $variantInfo = $product->variant_info;
+        $variantImageChanged = false;
+        if (is_array($variantInfo) && is_array($variantInfo['variants'] ?? null)) {
+            $files = $request->file('variant_image_files', []);
+            $urls = $request->input('variant_image_urls', []);
+            $remove = $request->input('variant_image_remove', []);
+
+            foreach ($variantInfo['variants'] as $index => $variant) {
+                if (! is_array($variant)) {
+                    continue;
+                }
+
+                $nextImage = trim((string) ($variant['image'] ?? ''));
+                if (isset($remove[$index]) && (string) $remove[$index] === '1') {
+                    $nextImage = '';
+                    $variantImageChanged = true;
+                }
+
+                $url = trim((string) ($urls[$index] ?? ''));
+                if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL)) {
+                    $nextImage = $url;
+                    $variantImageChanged = true;
+                }
+
+                $file = is_array($files) ? ($files[$index] ?? null) : null;
+                if ($file) {
+                    $path = $file->store('products/'.$product->id.'/variants', 'public');
+                    $nextImage = url(Storage::disk('public')->url($path));
+                    $variantImageChanged = true;
+                    $hasNewImages = true;
+                }
+
+                $variantInfo['variants'][$index]['image'] = $nextImage !== '' ? $nextImage : null;
+            }
+        }
+
         $product->update([
             'title' => $validated['title'],
             'sku' => $validated['sku'] ?? null,
@@ -427,6 +470,7 @@ class ProductController extends Controller
             'original_price' => $validated['original_price'],
             'stock' => $validated['stock'],
             'images' => $images,
+            'variant_info' => $variantInfo,
             'is_active' => $request->boolean('is_active'),
         ]);
 
@@ -441,7 +485,7 @@ class ProductController extends Controller
 
             try {
                 $options = $validated['sync_options'] ?? [ProductSyncService::OPTION_ALL];
-                if ($hasNewImages
+                if (($hasNewImages || $variantImageChanged)
                     && ! in_array(ProductSyncService::OPTION_ALL, $options, true)
                     && ! in_array(ProductSyncService::OPTION_IMAGES, $options, true)) {
                     $options[] = ProductSyncService::OPTION_IMAGES;
@@ -519,6 +563,56 @@ class ProductController extends Controller
     }
 
     /**
+     * Pull Shopify images, metafields and collections into this product.
+     */
+    public function pullShopifyProduct(UyumSoftProduct $product): RedirectResponse
+    {
+        $redirect = redirect()->route('products.show', $product);
+        $product->loadMissing('shopifyProduct');
+
+        if (! $this->shopifyService->isConfigured()) {
+            return $redirect->with('error', 'Shopify API ayarları eksik.');
+        }
+
+        if (blank($product->shopify_id) && blank($product->shopifyProduct?->shopify_product_id)) {
+            return $redirect->with('error', 'Bu ürün henüz Shopify ile eşleşmemiş.');
+        }
+
+        $this->activityTracker->start(
+            'shopify_pull',
+            ($product->sku ?: $product->title).' Shopify’dan güncelle',
+            1,
+            ['product_id' => $product->id]
+        );
+        $this->activityTracker->markRunning('Shopify ürünü çekiliyor…');
+
+        try {
+            $result = $this->productSyncService->pullShopifyUpdates([$product->id]);
+            $this->activityTracker->complete(
+                $result['message'],
+                (int) ($result['synced'] ?? 0),
+                (int) ($result['errors'] ?? 0),
+                ['skipped' => $result['skipped'] ?? 0]
+            );
+
+            if (($result['synced'] ?? 0) < 1) {
+                return $redirect->with('warning', $result['message']);
+            }
+
+            return $redirect->with('success', $result['message']);
+        } catch (ShopifyException $e) {
+            $this->activityTracker->fail($e->getMessage(), $e);
+
+            return $redirect->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            $this->activityTracker->fail($e->getMessage(), $e);
+            report($e);
+
+            return $redirect->with('error', 'Shopify’dan güncelleme başarısız: '.$e->getMessage());
+        }
+    }
+
+    /**
      * Shopify mirror product detail page.
      */
     public function showShopifyMirror(ShopifyProduct $shopifyProduct): View
@@ -528,10 +622,14 @@ class ProductController extends Controller
         return view('products.shopify-show', [
             'product' => $shopifyProduct,
             'variants' => $shopifyProduct->variantRows(),
-            'images' => $shopifyProduct->imageRows(),
+            'images' => array_values(array_filter(array_map(
+                static fn (array $image): string => trim((string) ($image['src'] ?? '')),
+                $shopifyProduct->imageRows()
+            ))),
+            'shopifyMetafields' => $this->formattedMetafields($shopifyProduct->metafields ?? []),
             'adminUrl' => $this->shopifyService->adminProductUrl($shopifyProduct->shopify_product_id),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Ürünler', 'url' => route('products.index')],
                 ['label' => 'Shopify Eşit', 'url' => route('products.index', ['tab' => 'synced'])],
                 ['label' => $shopifyProduct->title],
@@ -608,48 +706,16 @@ class ProductController extends Controller
             ['limit' => $limit, 'offset' => $offset, 'type' => $type]
         );
 
-        $activityId = $activity->id;
-        $uuid = $activity->uuid;
-
-        // Legacy queue flag: still supported, but prefer afterResponse for live progress without worker.
-        if (! empty($validated['queue'])) {
-            if ($type === 'stock') {
-                SyncStock::dispatch();
-            } else {
-                SyncUyumSoftProducts::dispatch($limit, $offset, true, $type === 'reconcile');
-            }
-
-            return redirect()
-                ->route('products.index')
-                ->with('success', 'Senkronizasyon kuyruğa alındı. Sağ alttan takip edebilirsiniz.')
-                ->with('sync_activity_uuid', $uuid);
+        if ($type === 'stock') {
+            SyncStock::dispatch($activity->id);
+        } else {
+            SyncUyumSoftProducts::dispatch($limit, $offset, true, $type === 'reconcile', $activity->id);
         }
-
-        dispatch(function () use ($activityId, $type, $limit, $offset): void {
-            $tracker = app(SyncActivityTracker::class);
-            $activity = SyncActivity::query()->find($activityId);
-            if (! $activity) {
-                return;
-            }
-            $tracker->bind($activity);
-
-            try {
-                $service = app(ProductSyncService::class);
-                match ($type) {
-                    'stock' => $service->syncStock(),
-                    'reconcile' => $service->syncAllFromUyumSoftAndReconcile($limit, true),
-                    default => $service->syncAllFromUyumSoftAndReconcile($limit, false),
-                };
-            } catch (\Throwable $e) {
-                report($e);
-                $tracker->fail($e->getMessage(), $e);
-            }
-        })->afterResponse();
 
         return redirect()
             ->route('products.index')
-            ->with('success', 'İşlem arka planda başladı. Sağ alttan ilerlemeyi takip edebilirsiniz.')
-            ->with('sync_activity_uuid', $uuid);
+            ->with('success', 'İşlem kuyruğa alındı. Sağ alttan ilerlemeyi takip edebilirsiniz.')
+            ->with('sync_activity_uuid', $activity->uuid);
     }
 
     /**
@@ -701,5 +767,49 @@ class ProductController extends Controller
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    /**
+     * @param  array<int, int>  $productIds
+     * @param  array<int, string>  $options
+     * @param  array<string, mixed>  $meta
+     */
+    private function queueBulkProductAction(
+        string $action,
+        string $type,
+        string $title,
+        array $productIds,
+        array $options = [],
+        ?int $total = null,
+        array $meta = []
+    ): string {
+        $activity = $this->activityTracker->start($type, $title, $total, $meta);
+        ProcessBulkProductAction::dispatch(
+            $action,
+            $productIds,
+            $options,
+            $activity->id,
+            Auth::id()
+        );
+
+        return $activity->uuid;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $fields
+     * @return array<int, array<string, mixed>>
+     */
+    private function formattedMetafields(array $fields): array
+    {
+        $ids = ShopifyMetafieldFormatter::productIdsFromFields($fields);
+        $related = $ids === []
+            ? collect()
+            : ShopifyProduct::query()
+                ->with('uyumSoftProduct')
+                ->whereIn('shopify_product_id', $ids)
+                ->get()
+                ->keyBy('shopify_product_id');
+
+        return ShopifyMetafieldFormatter::present($fields, $related);
     }
 }

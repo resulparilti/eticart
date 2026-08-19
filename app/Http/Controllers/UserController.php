@@ -45,7 +45,7 @@ class UserController extends Controller
             'roles' => Role::query()->orderBy('name')->pluck('name'),
             'filters' => $request->only(['role', 'status', 'q']),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Kullanıcılar'],
             ],
         ]);
@@ -64,7 +64,7 @@ class UserController extends Controller
             'selectedPermissions' => [],
             'mode' => 'create',
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Kullanıcılar', 'url' => route('users.index')],
                 ['label' => 'Yeni Kullanıcı'],
             ],
@@ -109,7 +109,7 @@ class UserController extends Controller
             'selectedPermissions' => $user->permissions->pluck('name')->all(),
             'mode' => 'edit',
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Kullanıcılar', 'url' => route('users.index')],
                 ['label' => $user->name],
             ],

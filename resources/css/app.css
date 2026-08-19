@@ -2,7 +2,7 @@
 @import 'bootstrap-icons/font/bootstrap-icons.css';
 
 /* ------------------------------------------------------------------ */
-/* Light theme (only)                                                   */
+/* Light theme                                                          */
 /* ------------------------------------------------------------------ */
 :root,
 [data-bs-theme='light'] {
@@ -66,6 +66,73 @@
     --eticart-input-bg: #ffffff;
     --eticart-input-border: #cfd9e4;
     --eticart-table-stripe: rgba(15, 42, 61, 0.03);
+    --eticart-footer-bg: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark theme                                                           */
+/* ------------------------------------------------------------------ */
+[data-bs-theme='dark'] {
+    --bs-primary: #7eb4d6;
+    --bs-primary-rgb: 126, 180, 214;
+    --bs-secondary: #e4572e;
+    --bs-secondary-rgb: 228, 87, 46;
+    --bs-success: #3dba7e;
+    --bs-success-rgb: 61, 186, 126;
+    --bs-danger: #e06a6a;
+    --bs-danger-rgb: 224, 106, 106;
+    --bs-warning: #e6b35c;
+    --bs-warning-rgb: 230, 179, 92;
+    --bs-info: #4aa8d4;
+    --bs-info-rgb: 74, 168, 212;
+    --bs-light: #1a2a3b;
+    --bs-light-rgb: 26, 42, 59;
+    --bs-dark: #e4edf5;
+    --bs-dark-rgb: 228, 237, 245;
+
+    --bs-body-bg: #0b1420;
+    --bs-body-bg-rgb: 11, 20, 32;
+    --bs-body-color: #e4edf5;
+    --bs-body-color-rgb: 228, 237, 245;
+    --bs-emphasis-color: #f4f8fb;
+    --bs-secondary-color: rgba(228, 237, 245, 0.68);
+    --bs-secondary-bg: #152232;
+    --bs-tertiary-bg: #1a2a3b;
+    --bs-border-color: #243547;
+    --bs-border-color-translucent: rgba(255, 255, 255, 0.08);
+
+    --bs-link-color: #9ec3e0;
+    --bs-link-hover-color: #e4572e;
+    --bs-heading-color: #f2f6fa;
+    --bs-code-color: #f0a0b4;
+
+    --bs-border-radius: 0.85rem;
+    --bs-font-sans-serif: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+
+    color-scheme: dark;
+
+    --eticart-sidebar-width: 268px;
+    --eticart-navbar-height: 64px;
+    --eticart-surface: #152232;
+    --eticart-surface-solid: #152232;
+    --eticart-border: #243547;
+    --eticart-muted: #8aa0b5;
+    --eticart-accent: #e4572e;
+    --eticart-accent-soft: rgba(228, 87, 46, 0.22);
+    --eticart-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --eticart-glow: none;
+    --eticart-sidebar-bg: #101c2a;
+    --eticart-sidebar-border: #1d2e40;
+    --eticart-sidebar-brand: #f2f6fa;
+    --eticart-sidebar-brand-accent: #e4572e;
+    --eticart-sidebar-brand-border: #1d2e40;
+    --eticart-nav-color: #c5d4e2;
+    --eticart-nav-hover-bg: rgba(255, 255, 255, 0.06);
+    --eticart-nav-hover-color: #ffffff;
+    --eticart-sidebar-shadow: 1px 0 0 #1d2e40;
+    --eticart-input-bg: #0f1b28;
+    --eticart-input-border: #2a3e52;
+    --eticart-table-stripe: rgba(255, 255, 255, 0.04);
     --eticart-footer-bg: transparent;
 }
 
@@ -187,6 +254,74 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     border-color: var(--eticart-border);
 }
 
+.eticart-alert-unread {
+    background-color: var(--bs-tertiary-bg) !important;
+}
+
+.table-light {
+    --bs-table-bg: var(--bs-tertiary-bg);
+    --bs-table-color: var(--bs-body-color);
+    --bs-table-border-color: var(--eticart-border);
+    --bs-table-striped-bg: var(--eticart-table-stripe);
+    --bs-table-hover-bg: var(--eticart-table-stripe);
+    color: var(--bs-body-color);
+}
+
+[data-bs-theme='dark'] .bg-light {
+    background-color: var(--bs-tertiary-bg) !important;
+    color: var(--bs-body-color) !important;
+}
+
+[data-bs-theme='dark'] .text-bg-light {
+    background-color: var(--bs-tertiary-bg) !important;
+    color: var(--bs-body-color) !important;
+}
+
+[data-bs-theme='dark'] .btn-outline-secondary {
+    --bs-btn-color: #c5d4e2;
+    --bs-btn-border-color: #3a5166;
+    --bs-btn-hover-bg: #1a2a3b;
+    --bs-btn-hover-border-color: #4a657d;
+    --bs-btn-hover-color: #fff;
+}
+
+[data-bs-theme='dark'] .btn-outline-primary {
+    --bs-btn-color: #9ec3e0;
+    --bs-btn-border-color: #3a5166;
+    --bs-btn-hover-bg: #1a2a3b;
+    --bs-btn-hover-color: #fff;
+}
+
+[data-bs-theme='dark'] .pagination .page-link {
+    background-color: var(--eticart-surface-solid);
+    border-color: var(--eticart-border);
+    color: var(--bs-body-color);
+}
+
+[data-bs-theme='dark'] .eticart-calendar__day.is-muted {
+    background: rgba(255, 255, 255, 0.03);
+    color: #6b7c8f;
+}
+
+.eticart-theme-toggle [data-theme-icon='to-light'] {
+    display: none;
+}
+
+html[data-bs-theme='dark'] .eticart-theme-toggle [data-theme-icon='to-dark'] {
+    display: none;
+}
+
+html[data-bs-theme='dark'] .eticart-theme-toggle [data-theme-icon='to-light'] {
+    display: inline-block;
+}
+
+.auth-theme-toggle {
+    position: absolute;
+    top: 1.25rem;
+    right: 1.25rem;
+    z-index: 2;
+}
+
 .alert {
     border-radius: 0.85rem;
 }
@@ -213,7 +348,9 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     left: 0;
     bottom: 0;
     z-index: 1030;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
     box-shadow: var(--eticart-sidebar-shadow);
 }
@@ -235,6 +372,18 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     color: var(--eticart-sidebar-brand-accent);
 }
 
+.eticart-sidebar__nav {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 0.75rem 0 0.35rem;
+}
+
+.eticart-sidebar__footer {
+    flex: 0 0 auto;
+    padding: 0.35rem 0 0.85rem;
+    border-top: 1px solid var(--eticart-sidebar-border);
+}
+
 .eticart-nav-link {
     display: flex;
     align-items: center;
@@ -246,6 +395,33 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     border-radius: 0.8rem;
     border-left: 0;
     transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+button.eticart-nav-link {
+    width: calc(100% - 1.7rem);
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.eticart-nav-link__label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.eticart-nav-badge {
+    flex: 0 0 auto;
+    min-width: 1.35rem;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    background: #e4572e;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
 }
 
 .eticart-nav-link i {
@@ -263,6 +439,20 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     background: linear-gradient(135deg, rgba(228, 87, 46, 0.95), rgba(255, 122, 85, 0.85));
     color: #fff;
     box-shadow: 0 8px 18px rgba(228, 87, 46, 0.28);
+}
+
+.eticart-nav-link.is-active .eticart-nav-badge {
+    background: #fff;
+    color: #e4572e;
+}
+
+.eticart-nav-link.is-logout {
+    color: #c0392b;
+}
+
+.eticart-nav-link.is-logout:hover {
+    background: rgba(192, 57, 43, 0.08);
+    color: #922b21;
 }
 
 .eticart-main {
@@ -298,7 +488,7 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     right: 0;
     max-height: min(70vh, 420px);
     overflow: auto;
-    background: #fff;
+    background: var(--eticart-surface-solid);
     border: 1px solid var(--eticart-border);
     border-radius: 0.75rem;
     box-shadow: 0 16px 36px rgba(15, 42, 61, 0.14);
@@ -399,6 +589,18 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3, .h4, .h5 {
     height: 100%;
 }
 
+a.eticart-stat-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+}
+
+a.eticart-stat-card:focus-visible {
+    outline: 2px solid var(--eticart-accent);
+    outline-offset: 2px;
+}
+
 .eticart-stat-card:hover,
 .eticart-card:hover {
     box-shadow: 0 14px 32px rgba(15, 42, 61, 0.1);
@@ -463,8 +665,9 @@ code {
     color: var(--bs-code-color);
 }
 
-/* Auth screens stay branded (independent of app theme) */
+/* Auth screens: branded backdrop, card follows selected theme */
 .auth-wrap {
+    position: relative;
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -478,8 +681,8 @@ code {
 .auth-card {
     width: 100%;
     max-width: 420px;
-    background: #ffffff;
-    color: #142433;
+    background: var(--eticart-surface-solid);
+    color: var(--bs-body-color);
     border-radius: 1.25rem;
     padding: 2.1rem;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
@@ -487,13 +690,13 @@ code {
 }
 
 .auth-card .eticart-muted {
-    color: #6b7c8f !important;
+    color: var(--eticart-muted) !important;
 }
 
 .auth-card__brand {
     font-size: 1.65rem;
     font-weight: 800;
-    color: #0f2a3d;
+    color: var(--bs-heading-color);
     margin-bottom: 0.25rem;
     letter-spacing: -0.04em;
 }
@@ -825,7 +1028,7 @@ code {
 }
 
 .eticart-kanban__card {
-    background: #fff;
+    background: var(--eticart-surface-solid);
     border: 1px solid var(--eticart-border);
     border-radius: 0.65rem;
     padding: 0.7rem 0.75rem;
@@ -915,7 +1118,7 @@ code {
     text-align: left;
     border: 1px solid var(--eticart-border);
     border-radius: 0.65rem;
-    background: #fff;
+    background: var(--eticart-surface-solid);
     padding: 0.7rem 0.85rem;
 }
 
@@ -979,9 +1182,293 @@ code {
 .cargo-provider-logo {
     display: inline-block;
     max-width: 110px;
+    max-height: 24px;
     height: 24px;
+    width: auto;
     object-fit: contain;
     vertical-align: middle;
     border-radius: 4px;
     background: transparent;
+}
+
+.eticart-gallery__main {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 10px;
+    background: var(--eticart-surface-solid);
+    overflow: hidden;
+}
+
+.eticart-gallery__main img {
+    display: block;
+    width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+    cursor: zoom-in;
+}
+
+.eticart-gallery__slider {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.eticart-gallery__slider-btn {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 64px;
+    padding: 0;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 8px;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    font-size: 1.4rem;
+    line-height: 1;
+}
+
+.eticart-gallery__thumbs {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    padding-bottom: 4px;
+    min-width: 0;
+    flex: 1;
+}
+
+.eticart-gallery__thumb {
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    line-height: 0;
+    scroll-snap-align: start;
+}
+
+.eticart-product-thumb {
+    display: block;
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--bs-border-color);
+    background: var(--bs-tertiary-bg);
+}
+
+.eticart-product-thumb--empty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--eticart-muted);
+    font-size: 1.1rem;
+}
+
+.eticart-gallery__thumb img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--bs-border-color);
+    cursor: zoom-in;
+}
+
+.eticart-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    place-items: center;
+    padding: 48px 24px 24px;
+    background: rgba(10, 16, 24, 0.92);
+    cursor: zoom-out;
+}
+
+.eticart-lightbox:not(.is-open) {
+    display: none !important;
+}
+
+.eticart-lightbox.is-open {
+    display: grid !important;
+}
+
+.eticart-lightbox__img {
+    display: block;
+    width: auto !important;
+    height: auto !important;
+    max-width: min(92vw, 1100px);
+    max-height: 86vh;
+    object-fit: contain;
+    background: transparent;
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    cursor: default;
+}
+
+.eticart-lightbox__close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    z-index: 1;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.eticart-lightbox__close:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.eticart-lightbox__nav {
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    width: 48px;
+    height: 48px;
+    margin-top: -24px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    font-size: 36px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.eticart-lightbox__nav:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.eticart-lightbox__nav--prev {
+    left: 16px;
+}
+
+.eticart-lightbox__nav--next {
+    right: 16px;
+}
+
+.eticart-lightbox__counter {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 0.85rem;
+}
+
+.eticart-related-products {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.eticart-related-product {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 6px 10px 6px 6px;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 10px;
+    background: var(--bs-body-bg);
+    color: inherit;
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+
+.eticart-related-product:hover {
+    border-color: var(--bs-primary);
+    color: inherit;
+}
+
+.eticart-related-product--static {
+    cursor: default;
+}
+
+.eticart-related-product img,
+.eticart-related-product__placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bs-tertiary-bg);
+}
+
+.eticart-related-product__placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bs-secondary-color);
+}
+
+.eticart-metafield-rich p {
+    margin-bottom: 0.6rem;
+}
+
+.eticart-metafield-rich ul,
+.eticart-metafield-rich ol {
+    margin: 0 0 0.75rem;
+    padding-left: 1.2rem;
+}
+
+.eticart-metafield-rich li {
+    margin-bottom: 0.25rem;
+}
+
+.eticart-context-menu {
+    position: fixed;
+    z-index: 1080;
+    min-width: 220px;
+    padding: 0.35rem;
+    background: var(--eticart-surface-solid);
+    border: 1px solid var(--eticart-border);
+    border-radius: 0.75rem;
+    box-shadow: var(--eticart-shadow);
+}
+
+.eticart-context-menu__item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--bs-body-color);
+    text-align: left;
+    text-decoration: none;
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.55rem;
+    font-size: 0.9rem;
+}
+
+.eticart-context-menu__item:hover:not(:disabled) {
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+}
+
+.eticart-context-menu__item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.eticart-context-menu__sep {
+    height: 1px;
+    margin: 0.3rem 0.4rem;
+    background: var(--eticart-border);
 }

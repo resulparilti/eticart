@@ -134,6 +134,7 @@ class SyncActivityTracker
             'progress_current' => $this->current->progress_total ?: max($this->current->progress_current, $synced),
             'meta' => $mergedMeta,
             'finished_at' => now(),
+            'dismissed_at' => now(),
         ]);
 
         $this->log($errors > 0 ? 'warning' : 'success', $message, [
@@ -154,6 +155,7 @@ class SyncActivityTracker
             'status' => SyncActivity::STATUS_FAILED,
             'message' => $this->summarize($message),
             'finished_at' => now(),
+            'dismissed_at' => now(),
             'meta' => array_merge($this->current->meta ?? [], [
                 'exception' => $exception?->getMessage(),
             ]),

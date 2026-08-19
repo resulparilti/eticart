@@ -29,7 +29,7 @@ class OrderCalendarController extends Controller
             'focusDate' => $focus->toDateString(),
             'eventsUrl' => route('calendar.events'),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Takvim'],
             ],
         ]);

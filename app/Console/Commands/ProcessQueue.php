@@ -35,7 +35,7 @@ class ProcessQueue extends Command
                     'eticart-cron',
                     0,
                     256,
-                    600,
+                    1200,
                     1,
                     3,
                     false,

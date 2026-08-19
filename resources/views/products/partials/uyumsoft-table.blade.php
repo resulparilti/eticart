@@ -16,6 +16,7 @@
                     <label class="form-label">İşlem</label>
                     <select name="action" id="bulkAction" class="form-select" required>
                         <option value="reconcile">Güncellemeleri kontrol et (UyumSoft → Shopify)</option>
+                        <option value="pull_shopify">Shopify’dan eşitle (seçilenler / tüm eşitler)</option>
                         <option value="push_shopify">Seçilenleri Shopify’a aktar</option>
                         <option value="activate">Seçilenleri aktifleştir</option>
                         <option value="deactivate">Seçilenleri pasife al</option>
@@ -35,27 +36,28 @@
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="form-check mb-2" id="bulkQueueOption" style="display:none;">
-                        <input class="form-check-input" type="checkbox" name="queue" value="1" id="bulk_queue">
-                        <label class="form-check-label" for="bulk_queue">Kuyruğa al</label>
-                    </div>
                     <button type="submit" class="btn btn-primary w-100" id="bulkSubmitBtn">
                         Uygula
                     </button>
                 </div>
             </div>
             <div class="small eticart-muted mt-2">
+                Toplu işlemler kuyruğa alınır; ilerlemeyi sağ alttaki işlem izleyiciden takip edebilirsiniz.
                 <strong>Güncellemeleri kontrol et</strong> seçili ürün gerektirmez; UyumSoft kataloğunu yeniler ve Shopify’da eşitlenmiş ürünleri günceller.
-                Excel dışa aktarmada seçim yoksa filtreli tüm liste indirilir.
+                <strong>Shopify’dan eşitle</strong> seçili ürünlerin (veya seçim yoksa tüm eşitlenmiş ürünlerin) görsellerini, meta alanlarını ve koleksiyonlarını Shopify’dan çeker.
+                Excel dışa aktarmada seçim yoksa filtreli tüm liste indirilir (anında).
                 Pasif ürünler UyumSoft’tan gelmeye devam eder; Shopify’a aktarılmaz.
             </div>
         </div>
+    </form>
 
-        <x-table :headers="['', '', 'Başlık', 'SKU', 'Barkod', 'Fiyat', 'Stok', 'Varyant', 'Durum', 'İşlem']">
+    @include('products.partials.list-pager', ['pagerId' => 'productPagerTop', 'class' => 'mb-3'])
+
+    <x-table :headers="['', 'Görsel', '', 'Başlık', 'SKU', 'Barkod', 'Fiyat', 'Stok', 'Varyant', 'Durum', 'İşlem']">
             <tr class="table-light">
-                <td colspan="10" class="py-2">
+                <td colspan="11" class="py-2">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="selectAllProducts">
+                        <input class="form-check-input" type="checkbox" id="selectAllProducts" form="bulkProductsForm">
                         <label class="form-check-label" for="selectAllProducts">Tümünü seç</label>
                     </div>
                 </td>
@@ -66,7 +68,12 @@
                 @endphp
                 <tr class="{{ $product->is_active ? '' : 'table-secondary' }}">
                     <td style="width: 40px;">
-                        <input type="checkbox" name="product_ids[]" value="{{ $product->id }}" class="form-check-input product-check">
+                        <input type="checkbox" name="product_ids[]" value="{{ $product->id }}" class="form-check-input product-check" form="bulkProductsForm">
+                    </td>
+                    <td style="width: 56px;">
+                        <a href="{{ route('products.show', $product) }}" class="d-inline-block">
+                            <x-product-list-thumb :url="$product->primaryImageUrl()" :alt="$product->title" />
+                        </a>
                     </td>
                     <td style="width: 36px;" class="text-center">
                         @if ($product->synced_to_shopify)
@@ -110,11 +117,8 @@
                 </tr>
             @endforeach
         </x-table>
-    </form>
 
-    <div class="mt-3">
-        {{ $products->links() }}
-    </div>
+    @include('products.partials.list-pager', ['pagerId' => 'productPagerBottom', 'class' => 'mt-3'])
 @endif
 
 @push('scripts')
@@ -128,7 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const action = document.getElementById('bulkAction');
     const options = document.getElementById('bulkSyncOptions');
-    const queueOption = document.getElementById('bulkQueueOption');
     const form = document.getElementById('bulkProductsForm');
 
     const toggleOptions = () => {
@@ -137,14 +140,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (options) {
             options.style.display = value === 'push_shopify' ? '' : 'none';
         }
-        if (queueOption) {
-            queueOption.style.display = (value === 'reconcile') ? '' : 'none';
-        }
         if (form) {
-            if (value === 'export_excel' || value === 'reconcile') {
+            if (value === 'export_excel' || value === 'reconcile' || value === 'pull_shopify') {
                 form.removeAttribute('data-confirm');
             } else {
-                form.setAttribute('data-confirm', 'Seçilen ürünler için işlem onaylansın mı?');
+                form.setAttribute('data-confirm', 'Seçilen ürünler için işlem kuyruğa alınsın mı?');
             }
         }
     };

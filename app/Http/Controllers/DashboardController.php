@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Services\DiskUsageService;
 use App\Models\Shipment;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyProduct;
@@ -67,13 +68,16 @@ class DashboardController extends Controller
             'mail' => config('mail.default') === 'log' || filled(config('mail.mailers.smtp.host')),
         ];
 
+        $diskUsage = app(DiskUsageService::class)->snapshot();
+
         return view('dashboard', [
             'stats' => $stats,
             'recentOrders' => $recentOrders,
             'syncStatus' => $syncStatus,
             'systemHealth' => $systemHealth,
+            'diskUsage' => $diskUsage,
             'breadcrumbs' => [
-                ['label' => 'Dashboard'],
+                ['label' => 'Anasayfa'],
             ],
         ]);
     }

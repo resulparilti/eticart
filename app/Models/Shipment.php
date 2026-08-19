@@ -129,4 +129,15 @@ class Shipment extends Model
             self::STATUS_RETURNED,
         ], true);
     }
+
+    /**
+     * Teslim bekleyen kargolar (hazırlanıyor veya yolda).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<Shipment>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<Shipment>
+     */
+    public function scopeAwaitingDelivery($query)
+    {
+        return $query->whereIn('status', [self::STATUS_PENDING, self::STATUS_SHIPPED]);
+    }
 }

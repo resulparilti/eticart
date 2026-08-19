@@ -2,8 +2,10 @@
 
 namespace App\Exceptions;
 
+use App\Support\PanelNavigation;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
@@ -54,13 +56,19 @@ class Handler extends ExceptionHandler
 
             if ($request->expectsJson()) {
                 return response()->json([
-                    'message' => 'Oturum süresi doldu. Sayfayı yenileyip tekrar deneyin.',
+                    'message' => 'Oturum doğrulaması yenilenmeli. Sayfayı yenileyip tekrar deneyin.',
                 ], 419);
             }
 
+            if (Auth::check()) {
+                return redirect()
+                    ->to(PanelNavigation::last($request))
+                    ->with('error', 'Güvenlik doğrulaması yenilenmeli. Sayfayı yenileyip işlemi tekrar deneyin.');
+            }
+
             return redirect()
-                ->to('/login')
-                ->with('error', 'Oturum süresi doldu veya CSRF doğrulaması başarısız. Lütfen tekrar giriş yapın.');
+                ->route('login')
+                ->with('error', 'Oturum süresi doldu. Lütfen tekrar giriş yapın.');
         });
     }
 }

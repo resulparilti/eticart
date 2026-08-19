@@ -3,6 +3,7 @@
 namespace App\Console;
 
 use App\Jobs\GenerateDailyReport;
+use App\Support\SyncIntervalOptions;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
@@ -13,7 +14,7 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        $cronMinutes = max(15, (int) config('eticart.schedule_cron_minutes', 15));
+        $cronMinutes = SyncIntervalOptions::minCronMinutes();
 
         // cPanel cron ~15 dk'da bir schedule:run çağırır.
         // everyFifteenMinutes() :00/:15 dışında "No scheduled commands" verir → everyMinute().

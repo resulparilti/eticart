@@ -8,6 +8,7 @@ use App\Http\Controllers\MessageController;
 use App\Http\Controllers\OrderCalendarController;
 use App\Http\Controllers\AdminNotificationController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\ProductController;
@@ -21,6 +22,8 @@ use App\Http\Controllers\SyncActivityController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserNoteController;
 use App\Http\Controllers\UserTodoController;
+use App\Support\PanelNavigation;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -34,9 +37,21 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::match(['get', 'head'], '/', function () {
+Route::match(['get', 'head'], '/', function (Request $request) {
+    if ($request->user()) {
+        return PanelNavigation::replaceResponse($request);
+    }
+
     return redirect('/login');
 });
+Route::get('/session/status', function (Request $request) {
+    $authenticated = $request->user() !== null;
+
+    return response()->json([
+        'authenticated' => $authenticated,
+        'last' => $authenticated ? PanelNavigation::last($request) : null,
+    ]);
+})->name('session.status');
 Route::post('/', [ShopifyAppController::class, 'entry']);
 Route::get('/fatura/{token}', [PublicInvoiceController::class, 'show'])
     ->name('invoices.public')
@@ -133,6 +148,8 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/messages/customers-search', [MessageController::class, 'customersSearch'])->name('messages.customers-search');
     Route::get('/messages/customers/{customer}/preview', [MessageController::class, 'customerPreview'])->name('messages.customer-preview');
 
+    Route::get('/invoices', [InvoiceController::class, 'index'])->name('invoices.index');
+
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::post('/orders/sync', [OrderController::class, 'sync'])->name('orders.sync');
     Route::post('/orders/bulk-send-cargo', [OrderController::class, 'bulkSendCargo'])->name('orders.bulk-send-cargo');
@@ -146,7 +163,10 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::post('/orders/{order}/invoice', [OrderController::class, 'uploadInvoice'])->name('orders.invoice.upload');
     Route::delete('/orders/{order}/invoice', [OrderController::class, 'destroyInvoice'])->name('orders.invoice.destroy');
     Route::match(['get', 'post'], '/orders/{order}/send-shipment-mail', [OrderController::class, 'sendShipmentInvoiceMail'])->name('orders.send-shipment-mail');
+    Route::post('/orders/{order}/send-invoice-mail', [OrderController::class, 'sendInvoiceNoticeMail'])->name('orders.send-invoice-mail');
+    Route::post('/orders/{order}/send-cargo-mail', [OrderController::class, 'sendCargoNoticeMail'])->name('orders.send-cargo-mail');
     Route::post('/orders/{order}/sms', [OrderController::class, 'sendSms'])->name('orders.sms.send');
+    Route::post('/orders/{order}/template-message', [OrderController::class, 'sendTemplateMessage'])->name('orders.template-message');
     Route::post('/orders/{order}/shipments/{shipment}/cancel', [OrderController::class, 'cancelShipment'])->name('orders.shipments.cancel');
 
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
@@ -162,6 +182,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::put('/products/{product}', [ProductController::class, 'update'])->name('products.update');
     Route::post('/products/{product}/toggle-active', [ProductController::class, 'toggleActive'])->name('products.toggle-active');
     Route::post('/products/{product}/push-shopify', [ProductController::class, 'pushShopify'])->name('products.push-shopify');
+    Route::post('/products/{product}/pull-shopify', [ProductController::class, 'pullShopifyProduct'])->name('products.pull-shopify-one');
 
     Route::get('/shipments', [ShipmentController::class, 'index'])->name('shipments.index');
     Route::post('/shipments/sync-tracking', [ShipmentController::class, 'syncTracking'])->name('shipments.sync-tracking');
@@ -185,7 +206,6 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/alerts/{alert}/read', [AdminNotificationController::class, 'markRead'])->name('alerts.read');
 
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
-    Route::post('/notifications/test', [NotificationController::class, 'test'])->name('notifications.test');
     Route::get('/notifications/templates', [NotificationController::class, 'templates'])->name('notifications.templates');
     Route::put('/notifications/templates/mail/{template}', [NotificationController::class, 'updateMailTemplate'])->name('notifications.templates.mail.update');
     Route::put('/notifications/templates/sms/{template}', [NotificationController::class, 'updateSmsTemplate'])->name('notifications.templates.sms.update');

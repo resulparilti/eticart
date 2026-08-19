@@ -14,7 +14,7 @@ use Illuminate\View\View;
 class SyncActivityController extends Controller
 {
     /**
-     * Live monitor feed: active jobs + unfinished (not dismissed) recent results.
+     * Live monitor feed: only queued / running jobs.
      */
     public function live(Request $request): JsonResponse
     {
@@ -22,20 +22,14 @@ class SyncActivityController extends Controller
 
         $activities = SyncActivity::query()
             ->whereNull('dismissed_at')
-            ->where(function ($q) {
-                $q->whereIn('status', [SyncActivity::STATUS_QUEUED, SyncActivity::STATUS_RUNNING])
-                    ->orWhere('created_at', '>=', now()->subDays(2));
-            })
+            ->whereIn('status', [SyncActivity::STATUS_QUEUED, SyncActivity::STATUS_RUNNING])
             ->latest('id')
             ->limit($limit)
             ->get()
             ->map(fn (SyncActivity $activity) => $activity->toMonitorArray(false))
             ->values();
 
-        $activeCount = SyncActivity::query()
-            ->whereNull('dismissed_at')
-            ->whereIn('status', [SyncActivity::STATUS_QUEUED, SyncActivity::STATUS_RUNNING])
-            ->count();
+        $activeCount = $activities->count();
 
         return response()->json([
             'active_count' => $activeCount,
@@ -139,7 +133,7 @@ class SyncActivityController extends Controller
             'search' => $q,
             'types' => SyncActivity::query()->select('type')->distinct()->orderBy('type')->pluck('type'),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'İşlem Geçmişi'],
             ],
         ]);
@@ -159,7 +153,7 @@ class SyncActivityController extends Controller
             'activity' => $activity,
             'logs' => $activity->logs,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'İşlem Geçmişi', 'url' => route('sync-history.index')],
                 ['label' => $activity->title],
             ],

@@ -11,10 +11,15 @@
                 <code>@php echo '{{customer_name}}'; @endphp</code>
                 <code>@php echo '{{order_number}}'; @endphp</code>
                 <code>@php echo '{{total_price}}'; @endphp</code>
+                <code>@php echo '{{currency}}'; @endphp</code>
                 <code>@php echo '{{tracking_number}}'; @endphp</code>
                 <code>@php echo '{{tracking_url}}'; @endphp</code>
                 <code>@php echo '{{cargo_company}}'; @endphp</code>
                 <code>@php echo '{{status}}'; @endphp</code>
+                <code>@php echo '{{invoice_no}}'; @endphp</code>
+                <code>@php echo '{{invoice_url}}'; @endphp</code>
+                <code>@php echo '{{return_cargo_name}}'; @endphp</code>
+                <code>@php echo '{{return_cargo_code}}'; @endphp</code>
             </p>
         </div>
         <a href="{{ route('settings.index') }}" class="btn btn-outline-secondary">Geri</a>
@@ -27,6 +32,9 @@
                     <button class="accordion-button {{ $loop->first ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#mailTpl{{ $template->id }}">
                         <span class="fw-semibold">{{ $template->name }}</span>
                         <span class="ms-2 small eticart-muted">{{ $template->slug }}</span>
+                        @if (in_array($template->slug, $predefinedSlugs ?? [], true))
+                            <span class="badge text-bg-light border ms-2">Ön tanımlı</span>
+                        @endif
                     </button>
                 </h2>
                 <div id="mailTpl{{ $template->id }}" class="accordion-collapse collapse {{ $loop->first ? 'show' : '' }}" data-bs-parent="#mailTemplatesAccordion">

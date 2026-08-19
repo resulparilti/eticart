@@ -57,7 +57,7 @@
         ] as $key => $meta)
             <li class="nav-item">
                 <a class="nav-link {{ $tab === $key ? 'active' : '' }}"
-                   href="{{ route('products.index', array_filter(['tab' => $key, 'q' => $search ?: null])) }}">
+                   href="{{ route('products.index', array_filter(['tab' => $key] + ($listQuery ?? []))) }}">
                     {{ $meta['label'] }} <span class="badge text-bg-light">{{ $meta['count'] }}</span>
                 </a>
             </li>
@@ -112,6 +112,14 @@
                         <input type="number" step="0.01" min="0" name="price_max" value="{{ $priceMax }}" class="form-control">
                     </div>
                     <div class="col-lg-1 col-md-3">
+                        <label class="form-label">Sayfa başı</label>
+                        <select name="per_page" class="form-select">
+                            @foreach ($perPageOptions ?? [10, 20, 50, 100] as $option)
+                                <option value="{{ $option }}" @selected((int) ($perPage ?? 20) === (int) $option)>{{ $option }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-lg-1 col-md-3">
                         <button class="btn btn-outline-primary w-100" type="submit">Filtrele</button>
                     </div>
                 </form>
@@ -148,5 +156,9 @@
         'shopifyConfigured' => $shopifyConfigured,
         'uyumConfigured' => $uyumConfigured,
         'syncOptions' => $syncOptions,
+        'tab' => $tab,
+        'perPage' => $perPage ?? 20,
+        'perPageOptions' => $perPageOptions ?? [10, 20, 50, 100],
+        'listQuery' => $listQuery ?? [],
     ])
 @endsection

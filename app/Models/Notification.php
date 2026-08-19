@@ -102,4 +102,37 @@ class Notification extends Model
             default => (string) $this->status,
         };
     }
+
+    public function templateLabel(): string
+    {
+        if ($this->type === 'sms') {
+            return 'SMS';
+        }
+
+        return match ((string) $this->body) {
+            'shipment-invoice' => 'Kargo + fatura (tek mail)',
+            'invoice-notice' => 'Fatura bildirimi',
+            'cargo-notice' => 'Kargo bildirimi',
+            default => trim((string) $this->subject) !== '' ? (string) $this->subject : 'Mail',
+        };
+    }
+
+    public function channelLabel(): string
+    {
+        return $this->type === 'sms' ? 'SMS' : 'Mail';
+    }
+
+    public function deliveryLabel(): string
+    {
+        if ($this->type === 'sms') {
+            return match ((string) $this->status) {
+                'sent' => 'Gönderildi',
+                'failed' => 'Başarısız',
+                'pending' => 'Beklemede',
+                default => (string) $this->status,
+            };
+        }
+
+        return $this->statusLabel();
+    }
 }

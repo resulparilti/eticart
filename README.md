@@ -21,6 +21,17 @@ npm run build
 php artisan serve
 ```
 
+Yerel otomatik senkronizasyon (ayrı terminal):
+
+```powershell
+.\scripts\start-scheduler.ps1
+# veya
+composer scheduler
+```
+
+Bu komut `schedule:work` çalıştırır; paneldeki sipariş/stok/ürün/kargo aralıkları otomatik uygulanır.
+İşlem geçmişi ve `storage/logs/cron.log` dosyasına yazılır.
+
 ## cPanel paketi
 
 ```powershell
@@ -42,11 +53,19 @@ php artisan route:cache
 php artisan view:cache
 ```
 
-Cron (her dakika):
+Cron (VPS — her dakika):
 
 ```bash
-* * * * * cd /var/www/eticart && php artisan schedule:run >> /dev/null 2>&1
+sudo bash deploy/install-vps-cron.sh /var/www/eticart
 ```
+
+Manuel kurulum:
+
+```bash
+* * * * * cd /var/www/eticart && php artisan schedule:run >> /var/www/eticart/storage/logs/cron.log 2>&1
+```
+
+`.env` içinde `ETICART_DEPLOYMENT=vps` ve `SCHEDULE_CRON_MINUTES=1` olmalı.
 
 ## Güvenlik
 

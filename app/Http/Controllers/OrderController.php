@@ -9,6 +9,7 @@ use App\Exceptions\ShopifyException;
 use App\Exceptions\UyumSoftException;
 use App\Jobs\SyncShopifyOrders;
 use App\Models\CargoCompany;
+use App\Models\Notification;
 use App\Models\Shipment;
 use App\Models\ShopifyOrder;
 use App\Services\CargoService;
@@ -19,12 +20,15 @@ use App\Services\OrderLifecycleService;
 use App\Services\OrderSyncService;
 use App\Services\ShopifyService;
 use App\Services\UyumSoftOrderSyncService;
+use App\Support\OrderMessageTemplates;
 use App\Support\ShippingLabelProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Throwable;
 
@@ -51,6 +55,8 @@ class OrderController extends Controller
 
         if ($request->filled('status')) {
             $query->where('fulfillment_status', $request->string('status')->toString());
+        } elseif ($request->boolean('open')) {
+            $query->openUndelivered();
         }
 
         if ($request->filled('payment_status')) {
@@ -83,13 +89,16 @@ class OrderController extends Controller
         return view('orders.index', [
             'orders' => $orders,
             'filters' => array_merge(
-                $request->only(['status', 'payment_status', 'customer', 'date_from', 'date_to']),
+                $request->only(['status', 'payment_status', 'customer', 'date_from', 'date_to', 'open']),
                 ['customer' => $customerSearch !== '' ? $customerSearch : ($request->input('customer') ?: '')]
             ),
             'isConfigured' => $this->shopifyService->isConfigured(),
             'cargoCompanies' => CargoCompany::apiReady(),
+            'messageTemplates' => OrderMessageTemplates::options(),
+            'smsConfigured' => $this->customerMessages->smsConfigured(),
+            'mailConfigured' => $this->customerMessages->mailConfigured(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Siparişler'],
             ],
         ]);
@@ -111,13 +120,15 @@ class OrderController extends Controller
 
         return view('orders.show', [
             'order' => $order,
-            'shipmentMails' => $order->shipmentInvoiceMails(),
-            'orderSms' => $order->orderSms(),
             'smsConfigured' => $this->customerMessages->smsConfigured(),
+            'mailConfigured' => $this->customerMessages->mailConfigured(),
+            'messageTemplates' => OrderMessageTemplates::options(),
+            'suggestedTemplateKey' => OrderMessageTemplates::suggestedKey($order),
+            'customerNotices' => $order->customerNotices(),
             'cargoCompanies' => CargoCompany::apiReady(),
             'mailWaitSeconds' => $mailWaitSeconds,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Siparişler', 'url' => route('orders.index')],
                 ['label' => $order->order_number],
             ],
@@ -207,25 +218,27 @@ class OrderController extends Controller
     {
         try {
             $result = $this->uyumSoftOrderSyncService->syncOrder($order);
+            $flashKey = ($result['pushed'] || $result['invoice']) ? 'success' : 'info';
+            $message = $result['message'].' Detaylar işlem geçmişine kaydedildi.';
 
             return redirect()
                 ->route('orders.show', $order)
-                ->with('success', $result['message']);
+                ->with($flashKey, $message);
         } catch (UyumSoftException $e) {
             return redirect()
                 ->route('orders.show', $order)
-                ->with('error', $e->getMessage());
+                ->with('error', $e->getMessage().' Detaylar işlem geçmişine kaydedildi.');
         } catch (Throwable $e) {
             report($e);
 
             return redirect()
                 ->route('orders.show', $order)
-                ->with('error', 'UyumSoft senkronu sırasında beklenmeyen bir hata oluştu.');
+                ->with('error', 'UyumSoft senkronu sırasında beklenmeyen bir hata oluştu. Detaylar işlem geçmişine kaydedildi.');
         }
     }
 
     /**
-     * Send manual / template SMS to the order customer.
+     * Send a manual SMS to the order customer.
      */
     public function sendSms(Request $request, ShopifyOrder $order): RedirectResponse
     {
@@ -236,9 +249,7 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
-            'sms_mode' => ['required', 'in:template,manual'],
-            'template_slug' => ['nullable', 'string', 'max:100'],
-            'manual_message' => ['nullable', 'string', 'max:1000'],
+            'manual_message' => ['required', 'string', 'max:1000'],
         ]);
 
         if (! filled($order->customer_phone)) {
@@ -250,9 +261,9 @@ class OrderController extends Controller
         try {
             $notification = $this->customerMessages->sendOrderSms(
                 $order,
-                $validated['sms_mode'],
-                $validated['manual_message'] ?? null,
-                $validated['template_slug'] ?? null
+                'manual',
+                $validated['manual_message'],
+                null
             );
 
             if ($notification->status === 'failed') {
@@ -271,6 +282,52 @@ class OrderController extends Controller
                 ->route('orders.show', $order)
                 ->with('error', $e->getMessage());
         }
+    }
+
+    /**
+     * Queue a mail/SMS template for the order (sent in the background).
+     */
+    public function sendTemplateMessage(Request $request, ShopifyOrder $order): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'channel' => ['required', 'in:sms,mail'],
+            'template_key' => ['required', 'string', Rule::in(OrderMessageTemplates::keys())],
+        ]);
+
+        try {
+            $this->customerMessages->queueOrderTemplate(
+                $order,
+                $validated['channel'],
+                $validated['template_key'],
+                Auth::id()
+            );
+        } catch (Throwable $e) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', $e->getMessage());
+        }
+
+        $channelLabel = $validated['channel'] === 'sms' ? 'SMS' : 'Mail';
+        $label = OrderMessageTemplates::label($validated['template_key']);
+        $message = $channelLabel.' ('.$label.') kuyruğa alındı. Arka planda gönderilecek.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'message' => $message,
+            ]);
+        }
+
+        return redirect()
+            ->route('orders.show', $order)
+            ->with('success', $message);
     }
 
     /**
@@ -666,6 +723,7 @@ class OrderController extends Controller
             'invoice_original_name' => null,
             'invoice_uploaded_at' => null,
             'invoice_token' => null,
+            'uyumsoft_einvoice_uuid' => null,
             'notes' => ShopifyOrder::stripInvoiceLines($order->notes),
             'shopify_needs_push' => true,
         ]);
@@ -703,27 +761,7 @@ class OrderController extends Controller
                 return $redirect->with('error', 'Müşteri e-posta adresi yok.');
             }
 
-            $notification = $mailService->sendShipmentAndInvoiceNotification($order, $shipment);
-            $report = method_exists($notification, 'mailReport') ? $notification->mailReport() : [];
-            $message = method_exists($notification, 'reportMessage')
-                ? $notification->reportMessage()
-                : trim((string) ($notification->error ?: 'Mail işlemi tamamlandı.'));
-
-            if ($notification->status === 'failed') {
-                return $redirect->with('error', $message !== '' ? $message : 'Mail gönderilemedi.');
-            }
-
-            $success = $message
-                .' Alıcı: '.$notification->recipient
-                .' · From: '.($report['from'] ?? '-')
-                .' · SMTP: '.($report['host'] ?? '-')
-                .' · Ek: '.($report['attachment'] ?? 'indirme linki');
-
-            if (filled($report['warning'] ?? null)) {
-                return $redirect->with('success', $success)->with('warning', (string) $report['warning']);
-            }
-
-            return $redirect->with('success', $success);
+            return $this->redirectMailResult($order, $mailService->sendShipmentAndInvoiceNotification($order, $shipment));
         } catch (Throwable $e) {
             try {
                 report($e);
@@ -732,6 +770,92 @@ class OrderController extends Controller
 
             return $redirect->with('error', 'Mail gönderilemedi: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Send invoice download link email.
+     */
+    public function sendInvoiceNoticeMail(ShopifyOrder $order, MailService $mailService): RedirectResponse
+    {
+        $redirect = redirect()->route('orders.show', $order);
+
+        try {
+            if (! $order->hasInvoice()) {
+                return $redirect->with('error', 'Önce fatura belgesi oluşmalı.');
+            }
+
+            if (! filled($order->customer_email)) {
+                return $redirect->with('error', 'Müşteri e-posta adresi yok.');
+            }
+
+            return $this->redirectMailResult($order, $mailService->sendInvoiceNotice($order));
+        } catch (Throwable $e) {
+            try {
+                report($e);
+            } catch (Throwable) {
+            }
+
+            return $redirect->with('error', 'Fatura maili gönderilemedi: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Send cargo tracking email.
+     */
+    public function sendCargoNoticeMail(ShopifyOrder $order, MailService $mailService): RedirectResponse
+    {
+        $redirect = redirect()->route('orders.show', $order);
+
+        try {
+            $shipment = $order->latestCargoShipment();
+            $shipped = $shipment && in_array($shipment->status, [Shipment::STATUS_SHIPPED, Shipment::STATUS_DELIVERED], true);
+
+            if (! $shipped && ! in_array((string) $order->fulfillment_status, ['fulfilled', 'delivered'], true)) {
+                return $redirect->with('error', 'Kargo bilgilendirme maili yalnızca kargoya verildi durumunda gönderilir.');
+            }
+
+            if (! $shipment) {
+                return $redirect->with('error', 'Kargoya verilmiş bir gönderi yok.');
+            }
+
+            if (! filled($order->customer_email)) {
+                return $redirect->with('error', 'Müşteri e-posta adresi yok.');
+            }
+
+            return $this->redirectMailResult($order, $mailService->sendCargoNotice($order, $shipment));
+        } catch (Throwable $e) {
+            try {
+                report($e);
+            } catch (Throwable) {
+            }
+
+            return $redirect->with('error', 'Kargo maili gönderilemedi: '.$e->getMessage());
+        }
+    }
+
+    private function redirectMailResult(ShopifyOrder $order, Notification $notification): RedirectResponse
+    {
+        $redirect = redirect()->route('orders.show', $order);
+        $report = method_exists($notification, 'mailReport') ? $notification->mailReport() : [];
+        $message = method_exists($notification, 'reportMessage')
+            ? $notification->reportMessage()
+            : trim((string) ($notification->error ?: 'Mail işlemi tamamlandı.'));
+
+        if ($notification->status === 'failed') {
+            return $redirect->with('error', $message !== '' ? $message : 'Mail gönderilemedi.');
+        }
+
+        $success = $message
+            .' Alıcı: '.$notification->recipient
+            .' · From: '.($report['from'] ?? '-')
+            .' · SMTP: '.($report['host'] ?? '-')
+            .' · Ek: '.($report['attachment'] ?? 'indirme linki');
+
+        if (filled($report['warning'] ?? null)) {
+            return $redirect->with('success', $success)->with('warning', (string) $report['warning']);
+        }
+
+        return $redirect->with('success', $success);
     }
 
     /**

@@ -64,6 +64,8 @@
             <div class="eticart-server-clock__time" x-text="timeText"></div>
         </div>
 
+        <x-theme-toggle />
+
         @php
             $alertUnread = $adminNotificationUnread ?? 0;
             $alertItems = $adminNotificationLatest ?? collect();
@@ -94,7 +96,7 @@
                     <a href="{{ route('alerts.index') }}" class="small">Tümü</a>
                 </div>
                 @forelse ($alertItems as $item)
-                    <a href="{{ route('alerts.read', $item) }}" class="dropdown-item py-2 {{ $item->isUnread() ? 'bg-light' : '' }}">
+                    <a href="{{ route('alerts.read', $item) }}" class="dropdown-item py-2 {{ $item->isUnread() ? 'eticart-alert-unread' : '' }}">
                         <div class="d-flex gap-2">
                             <i class="bi {{ $item->icon() }} mt-1"></i>
                             <div>

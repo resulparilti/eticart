@@ -22,12 +22,10 @@ class MessageController extends Controller
     public function create(): View
     {
         return view('messages.send', [
-            'smsTemplates' => $this->messages->smsTemplateOptions(),
-            'mailTemplates' => $this->messages->mailTemplateOptions(),
             'smsConfigured' => $this->messages->smsConfigured(),
             'mailConfigured' => $this->messages->mailConfigured(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Mesaj Gönder'],
             ],
         ]);
@@ -60,20 +58,11 @@ class MessageController extends Controller
     public function customerPreview(int $customerId): JsonResponse
     {
         $customer = ShopifyCustomer::query()->findOrFail($customerId);
-        $data = $this->messages->templateDataForCustomer($customer);
 
         return response()->json([
-            'data' => $data,
             'phone' => $customer->phone,
             'email' => $customer->email,
-            'sms_preview' => [
-                'order-confirmation-sms' => $this->messages->previewSms('order-confirmation-sms', $data),
-                'shipment-sms' => $this->messages->previewSms('shipment-sms', $data),
-            ],
-            'mail_preview' => collect($this->messages->mailTemplateOptions())
-                ->mapWithKeys(fn (array $row): array => [
-                    $row['slug'] => $this->messages->previewMail($row['slug'], $data),
-                ]),
+            'name' => $customer->displayName(),
         ]);
     }
 
@@ -82,8 +71,6 @@ class MessageController extends Controller
         $validated = $request->validate([
             'customer_id' => ['required', 'integer', 'exists:shopify_customers,id'],
             'channel' => ['required', 'in:sms,mail'],
-            'mode' => ['required', 'in:template,manual'],
-            'template_slug' => ['nullable', 'string', 'max:100'],
             'manual_message' => ['nullable', 'string', 'max:1000'],
             'manual_subject' => ['nullable', 'string', 'max:255'],
             'manual_body' => ['nullable', 'string', 'max:20000'],
@@ -99,17 +86,17 @@ class MessageController extends Controller
 
                 $notification = $this->messages->sendCustomerSms(
                     $customer,
-                    $validated['mode'],
+                    'manual',
                     $validated['manual_message'] ?? null,
-                    $validated['template_slug'] ?? null
+                    null
                 );
             } else {
                 $notification = $this->messages->sendCustomerMail(
                     $customer,
-                    $validated['mode'],
+                    'manual',
                     $validated['manual_subject'] ?? null,
                     $validated['manual_body'] ?? null,
-                    $validated['template_slug'] ?? null
+                    null
                 );
             }
 

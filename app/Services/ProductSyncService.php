@@ -405,7 +405,7 @@ class ProductSyncService
             'barcode' => ($data['barcode'] ?? '') !== '' ? $data['barcode'] : ($existing?->barcode),
             'title' => $data['title'],
             'description' => ($data['description'] ?? '') !== '' ? $data['description'] : ($existing?->description),
-            'variant_info' => $data['variant_info'] ?? null,
+            'variant_info' => $this->mergeLocalVariantImages($existing?->variant_info, $data['variant_info'] ?? null),
             'original_price' => $data['original_price'] ?? 0,
             'stock' => $data['stock'] ?? 0,
             'last_sync' => now(),
@@ -540,9 +540,9 @@ class ProductSyncService
                 }
 
                 if ($isCreate || in_array(self::OPTION_IMAGES, $options, true)) {
-                    $images = $product->imageUrls();
+                    $images = $this->shopifyImagePayload($product);
                     if ($images !== []) {
-                        $payload['images'] = array_map(static fn (string $src) => ['src' => $src], $images);
+                        $payload['images'] = $images;
                     }
                 }
 
@@ -558,6 +558,12 @@ class ProductSyncService
                         'images' => $payload['images'] ?? null,
                     ], static fn ($v) => $v !== null);
                     $remote = $this->shopifyService->updateProduct($shopifyId, $updatePayload);
+                }
+
+                if (($isCreate || in_array(self::OPTION_IMAGES, $options, true)) && $shopifyId) {
+                    $remote = $remote ?: $this->shopifyService->getProductDetails($shopifyId);
+                    $this->attachShopifyVariantImages($product, $remote);
+                    $remote = $this->shopifyService->getProductDetails($shopifyId);
                 }
             }
 
@@ -707,6 +713,202 @@ class ProductSyncService
     }
 
     /**
+     * Keep locally uploaded variant images when UyumSoft overwrites variant_info.
+     *
+     * @param  array<string, mixed>|null  $existing
+     * @param  array<string, mixed>|null  $incoming
+     * @return array<string, mixed>|null
+     */
+    private function mergeLocalVariantImages(?array $existing, ?array $incoming): ?array
+    {
+        if ($incoming === null) {
+            return $existing;
+        }
+
+        $existingVariants = is_array($existing['variants'] ?? null) ? $existing['variants'] : [];
+        $incomingVariants = is_array($incoming['variants'] ?? null) ? $incoming['variants'] : [];
+        if ($existingVariants === [] || $incomingVariants === []) {
+            return $incoming;
+        }
+
+        $imagesByKey = [];
+        foreach ($existingVariants as $variant) {
+            if (! is_array($variant)) {
+                continue;
+            }
+            $image = trim((string) ($variant['image'] ?? $variant['image_url'] ?? ''));
+            if ($image === '') {
+                continue;
+            }
+            $imagesByKey[UyumSoftProduct::variantKey($variant)] = $image;
+        }
+
+        foreach ($incomingVariants as $index => $variant) {
+            if (! is_array($variant)) {
+                continue;
+            }
+            $key = UyumSoftProduct::variantKey($variant);
+            if (isset($imagesByKey[$key]) && trim((string) ($variant['image'] ?? '')) === '') {
+                $incomingVariants[$index]['image'] = $imagesByKey[$key];
+            }
+        }
+
+        $incoming['variants'] = $incomingVariants;
+
+        return $incoming;
+    }
+
+    /**
+     * @return array<int, array{src: string, alt: string}>
+     */
+    private function shopifyImagePayload(UyumSoftProduct $product): array
+    {
+        $images = [];
+        $seen = [];
+
+        foreach ($product->imageUrls() as $index => $src) {
+            $src = trim($src);
+            if ($src === '' || isset($seen[$src])) {
+                continue;
+            }
+            $seen[$src] = true;
+            $images[] = [
+                'src' => $src,
+                'alt' => 'eticart:gallery:'.$index,
+            ];
+        }
+
+        foreach ($product->variantRows() as $row) {
+            $src = trim((string) ($row['image'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $alt = 'eticart:variant:'.UyumSoftProduct::variantKey($row);
+            if (isset($seen[$src])) {
+                foreach ($images as $index => $image) {
+                    if ($image['src'] === $src && str_starts_with($image['alt'], 'eticart:gallery:')) {
+                        $images[$index]['alt'] = $alt;
+                    }
+                }
+
+                continue;
+            }
+            $seen[$src] = true;
+            $images[] = [
+                'src' => $src,
+                'alt' => $alt,
+            ];
+        }
+
+        return $images;
+    }
+
+    /**
+     * @param  array<string, mixed>  $remote
+     */
+    private function attachShopifyVariantImages(UyumSoftProduct $product, array $remote): void
+    {
+        $images = is_array($remote['images'] ?? null) ? $remote['images'] : [];
+        $remoteVariants = is_array($remote['variants'] ?? null) ? $remote['variants'] : [];
+        if ($images === [] || $remoteVariants === []) {
+            return;
+        }
+
+        $idByAlt = [];
+        $idBySrc = [];
+        foreach ($images as $image) {
+            if (! is_array($image) || ! isset($image['id'])) {
+                continue;
+            }
+            $id = (string) $image['id'];
+            $alt = trim((string) ($image['alt'] ?? ''));
+            if ($alt !== '') {
+                $idByAlt[$alt] = $id;
+            }
+            $src = strtolower((string) ($image['src'] ?? ''));
+            if ($src !== '') {
+                $idBySrc[$src] = $id;
+            }
+        }
+
+        foreach ($product->variantRows() as $local) {
+            $src = trim((string) ($local['image'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+
+            $match = $this->matchRemoteVariant($remoteVariants, $local);
+            $variantId = isset($match['id']) ? (string) $match['id'] : '';
+            if ($variantId === '') {
+                continue;
+            }
+
+            $alt = 'eticart:variant:'.UyumSoftProduct::variantKey($local);
+            $imageId = $idByAlt[$alt]
+                ?? $idBySrc[strtolower($src)]
+                ?? $this->matchShopifyImageIdByFilename($images, $src);
+
+            if ($imageId === null) {
+                continue;
+            }
+
+            try {
+                $this->shopifyService->updateProductVariant($variantId, [
+                    'id' => $variantId,
+                    'image_id' => (int) $imageId,
+                ]);
+            } catch (ShopifyException $e) {
+                Log::channel('stack')->warning('Variant image attach failed', [
+                    'product_id' => $product->id,
+                    'sku' => $local['sku'] ?? null,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $images
+     */
+    private function matchShopifyImageIdByFilename(array $images, string $src): ?string
+    {
+        $filename = strtolower(basename(parse_url($src, PHP_URL_PATH) ?: $src));
+        if ($filename === '') {
+            return null;
+        }
+
+        foreach ($images as $image) {
+            if (! is_array($image) || ! isset($image['id'])) {
+                continue;
+            }
+            $remoteSrc = strtolower((string) ($image['src'] ?? ''));
+            if ($remoteSrc !== '' && str_contains($remoteSrc, $filename)) {
+                return (string) $image['id'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function compareAtPriceValue(array $row): ?string
+    {
+        $compare = $row['compare_at_price'] ?? null;
+        if ($compare === null || $compare === '' || (float) $compare <= 0) {
+            return null;
+        }
+
+        $price = (float) ($row['price'] ?? 0);
+        if ((float) $compare <= $price + 0.009) {
+            return null;
+        }
+
+        return number_format((float) $compare, 2, '.', '');
+    }
+
+    /**
      * Build Shopify options + variants from local UyumSoft variant_info.
      *
      * @return array<string, mixed>
@@ -747,6 +949,10 @@ class ProductSyncService
                 'sku' => (string) (($row['sku'] ?? null) ?: ($product->sku ?: $product->uyumsoft_id)),
                 'inventory_management' => 'shopify',
             ];
+            $compareAt = $this->compareAtPriceValue($row);
+            if ($compareAt !== null) {
+                $variant['compare_at_price'] = $compareAt;
+            }
             if (! empty($row['barcode'])) {
                 $variant['barcode'] = (string) $row['barcode'];
             }
@@ -820,6 +1026,7 @@ class ProductSyncService
                 $payload = [
                     'id' => $variantId,
                     'price' => (string) ($local['price'] ?? $product->original_price),
+                    'compare_at_price' => $this->compareAtPriceValue($local),
                 ];
                 if (! empty($local['sku'])) {
                     $payload['sku'] = (string) $local['sku'];
@@ -932,10 +1139,111 @@ class ProductSyncService
     }
 
     /**
+     * Shopify'daki görsel, meta alan ve koleksiyon güncellemelerini lokale çeker.
+     *
+     * @param  array<int, int>  $uyumSoftProductIds
+     * @return array{synced: int, skipped: int, errors: int, message: string}
+     */
+    public function pullShopifyUpdates(array $uyumSoftProductIds): array
+    {
+        if (! $this->shopifyService->isConfigured()) {
+            throw new ShopifyException('Shopify API ayarları eksik.');
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $uyumSoftProductIds))));
+        $products = UyumSoftProduct::query()
+            ->with('shopifyProduct')
+            ->whereIn('id', $ids)
+            ->get();
+
+        $synced = 0;
+        $skipped = 0;
+        $errors = 0;
+        $total = $products->count();
+
+        if ($this->activityTracker->current()) {
+            $this->activityTracker->setTotal($total);
+            $this->activityTracker->markRunning('Shopify ürün güncellemeleri çekiliyor…');
+        }
+
+        $processed = 0;
+        foreach ($products as $product) {
+            $processed++;
+            try {
+                $result = $this->pullShopifyUpdatesForProduct($product);
+                if ($result['skipped']) {
+                    $skipped++;
+                    if ($this->activityTracker->current()) {
+                        $this->activityTracker->log('warning', ($product->sku ?: $product->title).': '.$result['message']);
+                    }
+                } else {
+                    $synced++;
+                    if ($this->activityTracker->current()) {
+                        $this->activityTracker->log('success', ($product->sku ?: $product->title).' Shopify’dan güncellendi.');
+                    }
+                }
+            } catch (Throwable $e) {
+                $errors++;
+                Log::channel('stack')->error('Shopify product update pull failed', [
+                    'product_id' => $product->id,
+                    'message' => $e->getMessage(),
+                ]);
+                if ($this->activityTracker->current()) {
+                    $this->activityTracker->log('error', ($product->sku ?: $product->title).': '.$e->getMessage());
+                }
+            }
+
+            if ($this->activityTracker->current()) {
+                $this->activityTracker->progress($processed, $total);
+            }
+        }
+
+        return [
+            'synced' => $synced,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'message' => "{$synced} ürün Shopify’dan güncellendi"
+                .($skipped > 0 ? ", {$skipped} atlandı" : '')
+                .($errors > 0 ? ", {$errors} hata" : '')
+                .'.',
+        ];
+    }
+
+    /**
+     * @return array{skipped: bool, message: string}
+     */
+    public function pullShopifyUpdatesForProduct(UyumSoftProduct $product): array
+    {
+        $product->loadMissing('shopifyProduct');
+        $shopifyId = trim((string) ($product->shopify_id ?: $product->shopifyProduct?->shopify_product_id ?: ''));
+        if ($shopifyId === '') {
+            return ['skipped' => true, 'message' => 'Shopify ürün kimliği yok.'];
+        }
+
+        $remote = $this->shopifyService->getProductDetails($shopifyId);
+        if ($remote === [] || empty($remote['id'])) {
+            return ['skipped' => true, 'message' => 'Shopify’da ürün bulunamadı.'];
+        }
+
+        $metafields = $this->shopifyService->getProductMetafields($shopifyId);
+        $collections = $this->shopifyService->getProductCollections($shopifyId);
+        $this->upsertShopifyRemoteProduct($remote, $metafields, $collections);
+        $this->applyShopifyMediaToUyumSoft($product->fresh(['shopifyProduct']) ?? $product, $remote);
+
+        return ['skipped' => false, 'message' => 'ok'];
+    }
+
+    /**
      * @param  array<string, mixed>  $remote
+     * @param  array<int, array<string, mixed>>|null  $metafields
+     * @param  array<int, array<string, mixed>>|null  $collections
      * @return array{rows: int, linked: int}
      */
-    private function upsertShopifyRemoteProduct(array $remote): array
+    private function upsertShopifyRemoteProduct(
+        array $remote,
+        ?array $metafields = null,
+        ?array $collections = null
+    ): array
     {
         $productId = (string) ($remote['id'] ?? '');
         if ($productId === '') {
@@ -946,6 +1254,8 @@ class ProductSyncService
         if (! is_array($variants) || $variants === []) {
             $variants = [[]];
         }
+
+        $imageIndex = $this->shopifyImageIndex($remote);
 
         $normalizedVariants = [];
         foreach ($variants as $variant) {
@@ -959,11 +1269,12 @@ class ProductSyncService
                 'sku' => filled($variant['sku'] ?? null) ? (string) $variant['sku'] : null,
                 'price' => (float) ($variant['price'] ?? 0),
                 'compare_at_price' => isset($variant['compare_at_price']) ? (float) $variant['compare_at_price'] : null,
-                'stock' => (int) ($variant['inventory_quantity'] ?? 0),
+                'stock' => (int) ($variant['inventory_quantity'] ?? $variant['stock'] ?? 0),
                 'barcode' => filled($variant['barcode'] ?? null) ? (string) $variant['barcode'] : null,
                 'inventory_item_id' => isset($variant['inventory_item_id'])
                     ? (string) $variant['inventory_item_id']
                     : null,
+                'image' => $this->shopifyVariantImageSrc($variant, $imageIndex),
             ];
         }
 
@@ -977,6 +1288,7 @@ class ProductSyncService
                 'stock' => 0,
                 'barcode' => null,
                 'inventory_item_id' => null,
+                'image' => null,
             ];
         }
 
@@ -1006,27 +1318,8 @@ class ProductSyncService
             }
         }
 
-        $images = [];
-        foreach ($remote['images'] ?? [] as $image) {
-            if (! is_array($image)) {
-                continue;
-            }
-            $src = (string) ($image['src'] ?? '');
-            if ($src === '') {
-                continue;
-            }
-            $images[] = [
-                'src' => $src,
-                'alt' => $image['alt'] ?? null,
-                'position' => (int) ($image['position'] ?? 0),
-            ];
-        }
-
-        usort($images, static fn (array $a, array $b): int => ($a['position'] ?? 0) <=> ($b['position'] ?? 0));
-
-        $shopifyProduct = ShopifyProduct::query()->updateOrCreate(
-            ['shopify_product_id' => $productId],
-            [
+        $images = $imageIndex['gallery'];
+        $payload = [
                 'shopify_variant_id' => $primaryVariant['id'] !== '' ? $primaryVariant['id'] : null,
                 'inventory_item_id' => $primaryVariant['inventory_item_id'],
                 'title' => (string) ($remote['title'] ?? 'Shopify Ürün'),
@@ -1042,7 +1335,17 @@ class ProductSyncService
                 'variant_count' => count($normalizedVariants),
                 'uyumsoft_product_id' => $uyumsoft?->id,
                 'last_sync' => now(),
-            ]
+        ];
+        if ($metafields !== null) {
+            $payload['metafields'] = $metafields;
+        }
+        if ($collections !== null) {
+            $payload['collections'] = $collections;
+        }
+
+        $shopifyProduct = ShopifyProduct::query()->updateOrCreate(
+            ['shopify_product_id' => $productId],
+            $payload
         );
 
         ShopifyProduct::query()
@@ -1061,6 +1364,145 @@ class ProductSyncService
         }
 
         return ['rows' => 1, 'linked' => $linked];
+    }
+
+    /**
+     * @param  array<string, mixed>  $remote
+     * @return array{gallery: array<int, array{src: string, alt: mixed, position: int}>, by_id: array<string, string>, by_variant: array<string, string>}
+     */
+    private function shopifyImageIndex(array $remote): array
+    {
+        $gallery = [];
+        $byId = [];
+        $byVariant = [];
+
+        foreach ($remote['images'] ?? [] as $image) {
+            if (! is_array($image)) {
+                continue;
+            }
+
+            $src = trim((string) ($image['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+
+            $gallery[] = [
+                'src' => $src,
+                'alt' => $image['alt'] ?? null,
+                'position' => (int) ($image['position'] ?? 0),
+            ];
+
+            if (isset($image['id'])) {
+                $byId[(string) $image['id']] = $src;
+            }
+
+            foreach ($image['variant_ids'] ?? [] as $variantId) {
+                $byVariant[(string) $variantId] = $src;
+            }
+        }
+
+        usort($gallery, static fn (array $a, array $b): int => ($a['position'] ?? 0) <=> ($b['position'] ?? 0));
+
+        return [
+            'gallery' => array_values($gallery),
+            'by_id' => $byId,
+            'by_variant' => $byVariant,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $variant
+     * @param  array{gallery: array<int, array{src: string, alt: mixed, position: int}>, by_id: array<string, string>, by_variant: array<string, string>}  $index
+     */
+    private function shopifyVariantImageSrc(array $variant, array $index): ?string
+    {
+        $variantId = isset($variant['id']) ? (string) $variant['id'] : '';
+        if ($variantId !== '' && isset($index['by_variant'][$variantId])) {
+            return $index['by_variant'][$variantId];
+        }
+
+        $imageId = isset($variant['image_id']) ? (string) $variant['image_id'] : '';
+        if ($imageId !== '' && isset($index['by_id'][$imageId])) {
+            return $index['by_id'][$imageId];
+        }
+
+        $direct = trim((string) ($variant['image'] ?? $variant['image_url'] ?? ''));
+
+        return $direct !== '' ? $direct : null;
+    }
+
+    private function isShopifyHostedImage(string $url): bool
+    {
+        $host = strtolower((string) (parse_url($url, PHP_URL_HOST) ?? ''));
+
+        return $host !== '' && (str_contains($host, 'shopify.com') || str_contains($host, 'shopifycdn.com'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $remote
+     */
+    private function applyShopifyMediaToUyumSoft(UyumSoftProduct $product, array $remote): void
+    {
+        $index = $this->shopifyImageIndex($remote);
+        $gallery = array_values(array_filter(array_map(
+            static fn (array $image): string => trim((string) ($image['src'] ?? '')),
+            $index['gallery']
+        )));
+
+        $imagesBySku = [];
+        $imagesByBarcode = [];
+        foreach ($remote['variants'] ?? [] as $variant) {
+            if (! is_array($variant)) {
+                continue;
+            }
+            $src = $this->shopifyVariantImageSrc($variant, $index);
+            if ($src === null) {
+                continue;
+            }
+            $sku = trim((string) ($variant['sku'] ?? ''));
+            if ($sku !== '') {
+                $imagesBySku[$sku] = $src;
+            }
+            $barcode = trim((string) ($variant['barcode'] ?? ''));
+            if ($barcode !== '') {
+                $imagesByBarcode[$barcode] = $src;
+            }
+        }
+
+        $variantInfo = is_array($product->variant_info) ? $product->variant_info : [];
+        $localVariants = is_array($variantInfo['variants'] ?? null) ? $variantInfo['variants'] : [];
+        foreach ($localVariants as $i => $variant) {
+            if (! is_array($variant)) {
+                continue;
+            }
+            $barcode = trim((string) ($variant['barcode'] ?? $variant['barkod'] ?? ''));
+            $sku = trim((string) ($variant['sku'] ?? $variant['stockCode'] ?? $variant['code'] ?? ''));
+            $src = ($barcode !== '' ? ($imagesByBarcode[$barcode] ?? null) : null)
+                ?? ($sku !== '' ? ($imagesBySku[$sku] ?? null) : null);
+            $current = trim((string) ($localVariants[$i]['image'] ?? ''));
+            if ($src) {
+                $localVariants[$i]['image'] = $src;
+            } elseif ($current !== '' && $this->isShopifyHostedImage($current)) {
+                $localVariants[$i]['image'] = null;
+            }
+        }
+        if ($localVariants !== []) {
+            $variantInfo['variants'] = $localVariants;
+        }
+
+        $values = [
+            'shopify_id' => (string) ($remote['id'] ?? $product->shopify_id),
+            'synced_to_shopify' => true,
+            'shopify_synced_at' => now(),
+            'last_sync' => now(),
+            // Shopify kaynağı: silinen görseller de yansısın (boş galeri dahil).
+            'images' => $gallery,
+        ];
+        if ($variantInfo !== []) {
+            $values['variant_info'] = $variantInfo;
+        }
+
+        $product->update($values);
     }
 
     private function resolveUyumSoftForShopifyProduct(

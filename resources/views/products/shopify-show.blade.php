@@ -3,6 +3,13 @@
 @section('title', $product->title)
 
 @section('content')
+@php
+    $lightboxImages = array_values(array_unique(array_filter(array_map(
+        'strval',
+        array_merge($images ?? [], array_column($variants ?? [], 'image') ?: [])
+    ))));
+@endphp
+<div x-data='productMedia(@js($lightboxImages))'>
     <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <div>
             <h1 class="h3 mb-1">{{ $product->title }}</h1>
@@ -28,23 +35,7 @@
         <div class="col-lg-5">
             <div class="eticart-card p-3 h-100">
                 <h2 class="h6 mb-3">Galeri</h2>
-                @if (empty($images))
-                    <p class="eticart-muted mb-0">Görsel yok.</p>
-                @else
-                    <div class="row g-2">
-                        @foreach ($images as $image)
-                            <div class="{{ count($images) === 1 ? 'col-12' : 'col-6' }}">
-                                <a href="{{ $image['src'] }}" target="_blank" rel="noopener noreferrer">
-                                    <img src="{{ $image['src'] }}"
-                                         alt="{{ $image['alt'] ?? $product->title }}"
-                                         class="img-fluid rounded border w-100"
-                                         style="object-fit:cover;aspect-ratio:1/1;"
-                                         loading="lazy">
-                                </a>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
+                <x-product-gallery :images="$images" :alt="$product->title" />
             </div>
         </div>
         <div class="col-lg-7">
@@ -89,9 +80,28 @@
             <p class="eticart-muted mb-0">Varyant yok.</p>
         @else
             <div class="table-responsive">
-                <x-table :headers="['Başlık', 'SKU', 'Barkod', 'Fiyat', 'Stok']">
+                <x-table :headers="['Görsel', 'Başlık', 'SKU', 'Barkod', 'Fiyat', 'Stok']">
                     @foreach ($variants as $variant)
                         <tr>
+                            <td style="width: 64px;">
+                            @if (! empty($variant['image']))
+                                <button type="button"
+                                        class="eticart-gallery__thumb p-0 border-0 bg-transparent"
+                                        data-full-url="{{ $variant['image'] }}"
+                                        @click="openLightbox($event.currentTarget.getAttribute('data-full-url'))"
+                                        title="Büyüt">
+                                    <img src="{{ \App\Support\ShopifyMetafieldFormatter::cdnWidth($variant['image'], 96) }}"
+                                         alt="{{ $variant['title'] ?? 'Varyant' }}"
+                                         class="rounded border"
+                                         loading="lazy"
+                                         width="48"
+                                         height="48"
+                                         style="width: 48px; height: 48px; object-fit: cover;">
+                                </button>
+                            @else
+                                    <span class="small eticart-muted">—</span>
+                                @endif
+                            </td>
                             <td>{{ $variant['title'] ?? '-' }}</td>
                             <td>{{ $variant['sku'] ?? '-' }}</td>
                             <td>{{ $variant['barcode'] ?? '-' }}</td>
@@ -103,4 +113,33 @@
             </div>
         @endif
     </div>
+
+    @php
+        $shopifyCollections = is_array($product->collections) ? $product->collections : [];
+        $shopifyMetafields = $shopifyMetafields ?? [];
+    @endphp
+    @if ($shopifyMetafields !== [] || $shopifyCollections !== [])
+        <div class="row g-3 mt-1">
+            @if ($shopifyCollections !== [])
+                <div class="col-12 col-lg-6">
+                    <div class="eticart-card p-3 h-100">
+                        <h2 class="h6 mb-3">Koleksiyonlar</h2>
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach ($shopifyCollections as $collection)
+                                <span class="badge text-bg-light border">{{ $collection['title'] ?? $collection['handle'] ?? $collection['id'] }}</span>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
+            @if ($shopifyMetafields !== [])
+                <div class="col-12">
+                    <x-shopify-metafields :fields="$shopifyMetafields" />
+                </div>
+            @endif
+        </div>
+    @endif
+
+    <x-image-lightbox />
+</div>
 @endsection

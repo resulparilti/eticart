@@ -1043,6 +1043,86 @@ class ShopifyService
     }
 
     /**
+     * @return array<int, array{id: ?string, namespace: string, key: string, value: mixed, type: string}>
+     */
+    public function getProductMetafields(string|int $productId): array
+    {
+        try {
+            $response = $this->makeRequest('GET', "products/{$productId}/metafields.json", null, [
+                'limit' => 250,
+            ]);
+        } catch (ShopifyException) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($response['metafields'] ?? [] as $field) {
+            if (! is_array($field)) {
+                continue;
+            }
+
+            $namespace = trim((string) ($field['namespace'] ?? ''));
+            $key = trim((string) ($field['key'] ?? ''));
+            if ($namespace === '' || $key === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'id' => isset($field['id']) ? (string) $field['id'] : null,
+                'namespace' => $namespace,
+                'key' => $key,
+                'value' => $field['value'] ?? null,
+                'type' => (string) ($field['type'] ?? $field['value_type'] ?? ''),
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<int, array{id: string, title: string, handle: string, kind: string}>
+     */
+    public function getProductCollections(string|int $productId): array
+    {
+        $collections = [];
+        $seen = [];
+
+        foreach ([
+            'custom_collections.json' => ['custom_collections', 'custom'],
+            'smart_collections.json' => ['smart_collections', 'smart'],
+        ] as $endpoint => [$listKey, $kind]) {
+            try {
+                $response = $this->makeRequest('GET', $endpoint, null, [
+                    'product_id' => $productId,
+                    'limit' => 250,
+                ]);
+            } catch (ShopifyException) {
+                continue;
+            }
+
+            foreach ($response[$listKey] ?? [] as $collection) {
+                if (! is_array($collection) || empty($collection['id'])) {
+                    continue;
+                }
+
+                $id = (string) $collection['id'];
+                if (isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+                $collections[] = [
+                    'id' => $id,
+                    'title' => (string) ($collection['title'] ?? ''),
+                    'handle' => (string) ($collection['handle'] ?? ''),
+                    'kind' => $kind,
+                ];
+            }
+        }
+
+        return $collections;
+    }
+
+    /**
      * Remaining rate limit calls if known.
      */
     public function getRateLimitRemaining(): ?int

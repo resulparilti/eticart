@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Services\AdminNotificationService;
 use App\Services\MailConfigService;
 use App\Services\OutboundIpService;
+use App\Services\SidebarMenuService;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\View;
@@ -41,6 +42,28 @@ class AppServiceProvider extends ServiceProvider
 
         View::composer(['layouts.app', 'layouts.guest', 'components.sidebar'], function ($view) {
             $view->with('appBrandName', Setting::appName());
+        });
+
+        View::composer('components.sidebar', function ($view) {
+            if (! Auth::check()) {
+                $view->with('sidebarCounts', [
+                    'open_orders' => 0,
+                    'pending_shipments' => 0,
+                    'unread_alerts' => 0,
+                ]);
+
+                return;
+            }
+
+            try {
+                $view->with('sidebarCounts', app(SidebarMenuService::class)->counts());
+            } catch (\Throwable) {
+                $view->with('sidebarCounts', [
+                    'open_orders' => 0,
+                    'pending_shipments' => 0,
+                    'unread_alerts' => 0,
+                ]);
+            }
         });
 
         View::composer('layouts.app', function ($view) {

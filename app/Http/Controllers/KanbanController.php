@@ -31,7 +31,7 @@ class KanbanController extends Controller
         return view('workspace.kanban', [
             'columns' => $columns,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Kanban'],
             ],
         ]);

@@ -33,6 +33,15 @@
                 <label class="form-label">API Password</label>
                 <input type="password" name="uyumsoft_api_password" class="form-control" value="{{ old('uyumsoft_api_password', $settings['uyumsoft_api_password'] ?? '') }}" autocomplete="new-password">
             </div>
+            <div class="mb-3">
+                <label class="form-label">e-Fatura portal kullanıcı adı</label>
+                <input type="text" name="uyumsoft_einvoice_user" class="form-control" value="{{ old('uyumsoft_einvoice_user', $settings['uyumsoft_einvoice_user'] ?? '') }}" placeholder="AlnesaGiyim_WebServis">
+                <div class="form-text">ERP <code>WEBSERVIS</code> hesabından ayrıdır. PDF/XML bu kullanıcıyla çekilir.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">e-Fatura portal şifresi</label>
+                <input type="password" name="uyumsoft_einvoice_password" class="form-control" value="" autocomplete="new-password" placeholder="Değiştirmek için doldurun">
+            </div>
             <div class="row g-3 mb-3">
                 <div class="col-md-6">
                     <label class="form-label">İşyeri Kodu</label>

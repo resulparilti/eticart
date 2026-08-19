@@ -25,7 +25,7 @@ class UserTodoController extends Controller
             'todos' => $todos,
             'pendingCount' => $todos->where('is_done', false)->count(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Yapılacaklar'],
             ],
         ]);

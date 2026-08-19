@@ -28,7 +28,7 @@ class ReportController extends Controller
     {
         return view('reports.index', [
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Raporlar'],
             ],
         ]);
@@ -49,7 +49,7 @@ class ReportController extends Controller
             'dateFrom' => $from,
             'dateTo' => $to,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Raporlar', 'url' => route('reports.index')],
                 ['label' => 'Satış'],
             ],
@@ -74,7 +74,7 @@ class ReportController extends Controller
             'dateFrom' => $from,
             'dateTo' => $to,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Raporlar', 'url' => route('reports.index')],
                 ['label' => 'Senkron Logları'],
             ],
@@ -91,7 +91,7 @@ class ReportController extends Controller
         return view('reports.system-logs', [
             'report' => $report,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Raporlar', 'url' => route('reports.index')],
                 ['label' => 'Sistem Logları'],
             ],
@@ -191,7 +191,7 @@ class ReportController extends Controller
             'dateFrom' => $from,
             'dateTo' => $to,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Raporlar', 'url' => route('reports.index')],
                 ['label' => 'Kargo'],
             ],

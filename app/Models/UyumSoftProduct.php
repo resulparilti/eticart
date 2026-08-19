@@ -111,10 +111,18 @@ class UyumSoftProduct extends Model
                 'barcode' => $variant['barcode'] ?? $variant['barkod'] ?? null,
                 'title' => $variant['title'] ?? $variant['name'] ?? $variant['variant_title'] ?? 'Varyant',
                 'price' => $variant['price'] ?? $variant['salePrice'] ?? $variant['fiyat'] ?? $this->original_price,
+                'compare_at_price' => $variant['compare_at_price'] ?? null,
+                'disc1_rate' => $variant['disc1_rate'] ?? 0,
+                'disc2_rate' => $variant['disc2_rate'] ?? 0,
+                'disc3_rate' => $variant['disc3_rate'] ?? 0,
                 'stock' => $variant['stock'] ?? $variant['quantity'] ?? $variant['qty'] ?? '-',
+                'image' => $variant['image'] ?? $variant['image_url'] ?? null,
                 'attribute_1' => $variant['attribute_1'] ?? null,
                 'attribute_2' => $variant['attribute_2'] ?? null,
                 'attribute_3' => $variant['attribute_3'] ?? null,
+                'attribute_1_id' => $variant['attribute_1_id'] ?? null,
+                'attribute_2_id' => $variant['attribute_2_id'] ?? null,
+                'attribute_3_id' => $variant['attribute_3_id'] ?? null,
             ];
         }
 
@@ -164,6 +172,28 @@ class UyumSoftProduct extends Model
     }
 
     /**
+     * Stable identity for matching a variant across UyumSoft sync and Shopify.
+     *
+     * @param  array<string, mixed>  $variant
+     */
+    public static function variantKey(array $variant): string
+    {
+        $barcode = trim((string) ($variant['barcode'] ?? $variant['barkod'] ?? ''));
+        if ($barcode !== '') {
+            return 'b:'.$barcode;
+        }
+
+        $sku = trim((string) ($variant['sku'] ?? $variant['stockCode'] ?? $variant['code'] ?? ''));
+        if ($sku !== '') {
+            return 's:'.$sku;
+        }
+
+        return 'a:'.trim((string) ($variant['attribute_1_id'] ?? '')).'|'
+            .trim((string) ($variant['attribute_2_id'] ?? '')).'|'
+            .trim((string) ($variant['attribute_3_id'] ?? ''));
+    }
+
+    /**
      * @return array<int, string>
      */
     public function imageUrls(): array
@@ -183,5 +213,23 @@ class UyumSoftProduct extends Model
 
             return null;
         }, $images)));
+    }
+
+    /**
+     * Liste ve kartlarda kullanılacak ana görsel (panel veya Shopify).
+     */
+    public function primaryImageUrl(): ?string
+    {
+        foreach ($this->imageUrls() as $url) {
+            $url = trim((string) $url);
+            if ($url !== '') {
+                return $url;
+            }
+        }
+
+        $mirrorRows = $this->shopifyProduct?->imageRows() ?? [];
+        $fallback = trim((string) ($mirrorRows[0]['src'] ?? ''));
+
+        return $fallback !== '' ? $fallback : null;
     }
 }

@@ -49,8 +49,9 @@ class ConfigureCrossSiteSession
         }
 
         return $request->secure()
-            || $this->isTunnelHost($request)
-            || $this->matchesShopifyAppHost($request);
+            && ($this->isTunnelHost($request)
+                || $this->matchesShopifyAppHost($request)
+                || $this->isShopifyRequest($request));
     }
 
     private function matchesShopifyAppHost(Request $request): bool

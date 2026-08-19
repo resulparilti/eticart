@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Mail\CargoNoticeMail;
 use App\Mail\GenericMail;
+use App\Mail\InvoiceNoticeMail;
 use App\Mail\OrderConfirmationMail;
 use App\Mail\OrderStatusUpdateMail;
 use App\Mail\ShipmentInvoiceMail;
@@ -150,35 +152,9 @@ class MailService
 
         $companyName = $company?->name ?? 'Kargo';
         $trackingUrl = $this->httpsUrl((string) ($shipment->tracking_url ?? ''));
+        $brand = $this->branding();
 
-        try {
-            $brand = app(MailConfigService::class)->branding();
-        } catch (Throwable) {
-            $brand = [
-                'name' => trim((string) Setting::getValue('general_company_name', Setting::getValue('general_app_name', config('app.name')))),
-                'header_bg' => '#0f2a3d',
-                'header_text' => '#ffffff',
-                'body_text' => '#142433',
-                'muted_text' => '#5b6b7c',
-                'link' => '#c45c26',
-                'button_bg' => '#0f2a3d',
-                'button_text' => '#ffffff',
-                'logo_url' => null,
-                'site_url' => '',
-                'account_url' => '',
-            ];
-        }
-
-        $invoiceUrl = '';
-        try {
-            $invoiceUrl = $this->httpsUrl((string) ($order->invoiceUrl() ?? ''));
-        } catch (Throwable $e) {
-            Log::channel('stack')->warning('Invoice URL could not be built', [
-                'order_id' => $order->id,
-                'message' => $e->getMessage(),
-            ]);
-        }
-
+        $invoiceUrl = $this->invoiceUrlFor($order);
         $brandName = trim((string) ($brand['name'] ?? ''));
         $subject = ($brandName !== '' ? $brandName.' · ' : '').'Siparişiniz kargoya verildi - '.$order->order_number;
 
@@ -199,12 +175,56 @@ class MailService
         );
     }
 
+    public function sendInvoiceNotice(ShopifyOrder $order): Notification
+    {
+        $brand = $this->branding();
+        $brandName = trim((string) ($brand['name'] ?? ''));
+        $subject = ($brandName !== '' ? $brandName.' · ' : '').'Faturanız hazır - '.$order->order_number;
+
+        return $this->dispatchMail(
+            recipient: (string) $order->customer_email,
+            subject: $subject,
+            body: 'invoice-notice',
+            mailable: new InvoiceNoticeMail($order, [
+                'subject' => $subject,
+                'invoice_url' => $this->invoiceUrlFor($order),
+                'store_host' => $this->storeHost(),
+                'brand' => $brand,
+            ]),
+            notifiable: $order
+        );
+    }
+
+    public function sendCargoNotice(ShopifyOrder $order, Shipment $shipment): Notification
+    {
+        $shipment->loadMissing(['cargoCompany', 'order']);
+        $brand = $this->branding();
+        $brandName = trim((string) ($brand['name'] ?? ''));
+        $subject = ($brandName !== '' ? $brandName.' · ' : '').'Siparişiniz kargoya verildi - '.$order->order_number;
+
+        return $this->dispatchMail(
+            recipient: (string) $order->customer_email,
+            subject: $subject,
+            body: 'cargo-notice',
+            mailable: new CargoNoticeMail($order, $shipment, [
+                'subject' => $subject,
+                'status_text' => StatusLabels::shipment($shipment->status),
+                'tracking_url' => $this->httpsUrl((string) ($shipment->tracking_url ?? '')),
+                'company_name' => $shipment->cargoCompany?->name ?? 'Kargo',
+                'store_host' => $this->storeHost(),
+                'brand' => $brand,
+            ]),
+            notifiable: $order
+        );
+    }
+
     /**
      * Send a custom email (HTML şablon ile).
      */
     public function sendCustom(string $recipient, string $subject, string $body, mixed $notifiable = null): Notification
     {
-        if (trim($body) === 'shipment-invoice') {
+        $templateKey = trim($body);
+        if ($templateKey === 'shipment-invoice') {
             if ($notifiable instanceof ShopifyOrder) {
                 $shipment = $notifiable->latestCargoShipment();
                 if ($shipment) {
@@ -212,21 +232,45 @@ class MailService
                 }
             }
 
-            $notification = Notification::query()->create([
-                'type' => 'mail',
-                'recipient' => $this->normalizeRecipient($recipient),
-                'subject' => $subject,
-                'body' => $body,
-                'status' => 'failed',
-                'notifiable_type' => $notifiable ? $notifiable::class : null,
-                'notifiable_id' => $notifiable->id ?? null,
-                'error' => json_encode([
-                    'ok' => false,
-                    'message' => 'Kargo maili şablon anahtarı düz metin olarak gönderilemez. Sipariş sayfasındaki “Kargo ve fatura maili gönder” butonunu kullanın.',
-                ], JSON_UNESCAPED_UNICODE),
-            ]);
+            return $this->failedTemplateResend(
+                $recipient,
+                $subject,
+                $body,
+                $notifiable,
+                'Kargo + fatura maili için siparişte kargo kaydı gerekir.'
+            );
+        }
 
-            return $notification;
+        if ($templateKey === 'invoice-notice') {
+            if ($notifiable instanceof ShopifyOrder && $notifiable->hasInvoice()) {
+                return $this->sendInvoiceNotice($notifiable);
+            }
+
+            return $this->failedTemplateResend(
+                $recipient,
+                $subject,
+                $body,
+                $notifiable,
+                'Fatura bilgilendirme maili için siparişte fatura bağlantısı gerekir.'
+            );
+        }
+
+        if ($templateKey === 'cargo-notice') {
+            $order = $notifiable instanceof ShopifyOrder ? $notifiable : ($notifiable instanceof Shipment ? $notifiable->order : null);
+            $shipment = $notifiable instanceof Shipment
+                ? $notifiable
+                : ($order instanceof ShopifyOrder ? $order->latestCargoShipment() : null);
+            if ($order instanceof ShopifyOrder && $shipment) {
+                return $this->sendCargoNotice($order, $shipment);
+            }
+
+            return $this->failedTemplateResend(
+                $recipient,
+                $subject,
+                $body,
+                $notifiable,
+                'Kargo bilgilendirme maili için sipariş kargoya verilmiş olmalıdır.'
+            );
         }
 
         return $this->dispatchMail(
@@ -287,6 +331,10 @@ class MailService
             'tracking_number' => '454221545',
             'tracking_url' => 'https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=454221545',
             'cargo_company' => 'Yurtiçi Kargo',
+            'invoice_no' => 'ETF2026001',
+            'invoice_url' => 'https://example.com/fatura/ornek',
+            'return_cargo_name' => 'Yurtiçi Kargo',
+            'return_cargo_code' => '216625941',
         ];
     }
 
@@ -356,7 +404,7 @@ class MailService
             $mailer = (string) config('mail.default');
             $host = (string) config('mail.mailers.smtp.host');
             $attachment = 'indirme linki';
-            if ($mailable instanceof ShipmentInvoiceMail && method_exists($mailable, 'attachmentSummary')) {
+            if (is_object($mailable) && method_exists($mailable, 'attachmentSummary')) {
                 $attachment = $mailable->attachmentSummary();
             }
 
@@ -541,6 +589,75 @@ class MailService
         }
 
         return $name;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function branding(): array
+    {
+        try {
+            return app(MailConfigService::class)->branding();
+        } catch (Throwable) {
+            return [
+                'name' => trim((string) Setting::getValue('general_company_name', Setting::getValue('general_app_name', config('app.name')))),
+                'header_bg' => '#0f2a3d',
+                'header_text' => '#ffffff',
+                'body_text' => '#142433',
+                'muted_text' => '#5b6b7c',
+                'link' => '#c45c26',
+                'button_bg' => '#0f2a3d',
+                'button_text' => '#ffffff',
+                'logo_url' => null,
+                'site_url' => '',
+                'account_url' => '',
+            ];
+        }
+    }
+
+    private function storeHost(): string
+    {
+        try {
+            return app(MailConfigService::class)->storeHost();
+        } catch (Throwable) {
+            return "O'renne.com";
+        }
+    }
+
+    private function invoiceUrlFor(ShopifyOrder $order): string
+    {
+        try {
+            return $this->httpsUrl((string) ($order->invoiceUrl() ?? ''));
+        } catch (Throwable $e) {
+            Log::channel('stack')->warning('Invoice URL could not be built', [
+                'order_id' => $order->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return '';
+        }
+    }
+
+    private function failedTemplateResend(
+        string $recipient,
+        string $subject,
+        string $body,
+        mixed $notifiable,
+        string $message
+    ): Notification {
+        return Notification::query()->create([
+            'type' => 'mail',
+            'recipient' => $this->normalizeRecipient($recipient),
+            'subject' => $subject,
+            'body' => $body,
+            'status' => 'failed',
+            'notifiable_type' => $notifiable ? $notifiable::class : null,
+            'notifiable_id' => $notifiable->id ?? null,
+            'error' => json_encode([
+                'ok' => false,
+                'message' => $message,
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
     }
 
     private function httpsUrl(string $url): string

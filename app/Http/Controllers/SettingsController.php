@@ -18,7 +18,9 @@ use App\Services\MailConfigService;
 use App\Services\MailService;
 use App\Services\ShopifyService;
 use App\Services\SmsService;
+use App\Services\UyumSoftEInvoiceService;
 use App\Services\UyumSoftService;
+use App\Support\OrderMessageTemplates;
 use App\Support\ShippingLabelProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -45,7 +47,7 @@ class SettingsController extends Controller
                 'general' => filled(Setting::getValue('general_company_name')),
             ],
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Ayarlar'],
             ],
         ]);
@@ -217,6 +219,8 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'uyumsoft_api_user' => ['nullable', 'string', 'max:255'],
             'uyumsoft_api_password' => ['nullable', 'string', 'max:255'],
+            'uyumsoft_einvoice_user' => ['nullable', 'string', 'max:255'],
+            'uyumsoft_einvoice_password' => ['nullable', 'string', 'max:255'],
             'uyumsoft_warehouse_id' => ['nullable', 'string', 'max:100'],
             'uyumsoft_branch_code' => ['nullable', 'string', 'max:100'],
             'uyumsoft_base_url' => ['nullable', 'url', 'max:255'],
@@ -234,9 +238,15 @@ class SettingsController extends Controller
         $validated['uyumsoft_order_line_include_variant'] = $request->boolean('uyumsoft_order_line_include_variant') ? '1' : '0';
         $validated['uyumsoft_order_line_include_barcode'] = $request->boolean('uyumsoft_order_line_include_barcode') ? '1' : '0';
 
+        if (! filled($validated['uyumsoft_einvoice_password'] ?? null)) {
+            unset($validated['uyumsoft_einvoice_password']);
+        }
+
         $this->saveMany($validated, 'uyumsoft', [
             'uyumsoft_api_user' => 'UyumSoft API User',
             'uyumsoft_api_password' => 'UyumSoft API Password',
+            'uyumsoft_einvoice_user' => 'UyumSoft e-Fatura User',
+            'uyumsoft_einvoice_password' => 'UyumSoft e-Fatura Password',
             'uyumsoft_warehouse_id' => 'UyumSoft Depo Kodu',
             'uyumsoft_branch_code' => 'UyumSoft İşyeri Kodu',
             'uyumsoft_base_url' => 'UyumSoft Base URL',
@@ -262,8 +272,17 @@ class SettingsController extends Controller
             Cache::forget('eticart.settings');
             $service = new UyumSoftService();
             $result = $service->testConnection();
+            $message = 'UyumSoft ERP bağlantısı başarılı ('.($result['mode'] ?? 'api').') — '.$result['base_url'];
 
-            return back()->with('success', 'UyumSoft bağlantısı başarılı ('.($result['mode'] ?? 'api').') — '.$result['base_url']);
+            try {
+                $eInvoice = app(UyumSoftEInvoiceService::class)->testConnection();
+                $company = $eInvoice['company'] !== '' ? ' / '.$eInvoice['company'] : '';
+                $message .= '. e-Fatura portalı da başarılı ('.$eInvoice['username'].$company.').';
+            } catch (UyumSoftException $e) {
+                return back()->with('warning', $message.' e-Fatura portalı: '.$e->getMessage());
+            }
+
+            return back()->with('success', $message);
         } catch (UyumSoftException $e) {
             return back()->with('error', $e->getMessage());
         } catch (\Throwable $e) {
@@ -883,16 +902,12 @@ class SettingsController extends Controller
     public function updateSync(Request $request): RedirectResponse
     {
         $minCron = SyncIntervalOptions::minCronMinutes();
-        $orderRule = SyncIntervalOptions::validateRule('orders');
-        $productRule = SyncIntervalOptions::validateRule('products');
-        $stockRule = SyncIntervalOptions::validateRule('stock');
-        $cargoRule = SyncIntervalOptions::validateRule('cargo');
 
         $validated = $request->validate([
-            'sync_orders_interval' => [$orderRule],
-            'sync_products_interval' => [$productRule],
-            'sync_stock_interval' => [$stockRule],
-            'sync_cargo_interval' => [$cargoRule],
+            'sync_orders_interval' => SyncIntervalOptions::validateRules('orders'),
+            'sync_products_interval' => SyncIntervalOptions::validateRules('products'),
+            'sync_stock_interval' => SyncIntervalOptions::validateRules('stock'),
+            'sync_cargo_interval' => SyncIntervalOptions::validateRules('cargo'),
             'auto_create_shipment' => ['nullable', 'boolean'],
             'auto_send_tracking' => ['nullable', 'boolean'],
         ]);
@@ -921,21 +936,24 @@ class SettingsController extends Controller
             'auto_send_tracking' => 'Otomatik Tracking Gönder',
         ]);
 
-        SyncJob::query()->where('job_type', 'order_sync')->update(['interval_minutes' => (int) $validated['sync_orders_interval']]);
-        SyncJob::query()->where('job_type', 'product_sync')->update(['interval_minutes' => (int) $validated['sync_products_interval']]);
-        SyncJob::query()->where('job_type', 'stock_sync')->update(['interval_minutes' => (int) $validated['sync_stock_interval']]);
-        SyncJob::query()->where('job_type', 'cargo_tracking')->update(['interval_minutes' => (int) $validated['sync_cargo_interval']]);
-        SyncJob::query()->firstOrCreate(
-            ['job_type' => 'uyumsoft_order_sync'],
-            [
-                'interval_minutes' => (int) $validated['sync_orders_interval'],
-                'status' => 'idle',
-                'is_active' => true,
-            ]
-        );
-        SyncJob::query()->where('job_type', 'uyumsoft_order_sync')->update([
-            'interval_minutes' => (int) $validated['sync_orders_interval'],
-        ]);
+        $jobUpdates = [
+            'order_sync' => (int) $validated['sync_orders_interval'],
+            'product_sync' => (int) $validated['sync_products_interval'],
+            'stock_sync' => (int) $validated['sync_stock_interval'],
+            'cargo_tracking' => (int) $validated['sync_cargo_interval'],
+            'uyumsoft_order_sync' => (int) $validated['sync_orders_interval'],
+        ];
+
+        foreach ($jobUpdates as $jobType => $intervalMinutes) {
+            SyncJob::query()->updateOrCreate(
+                ['job_type' => $jobType],
+                [
+                    'interval_minutes' => $intervalMinutes,
+                    'status' => 'idle',
+                    'is_active' => true,
+                ]
+            );
+        }
 
         return back()->with('success', 'Senkronizasyon ayarları kaydedildi.');
     }
@@ -945,8 +963,11 @@ class SettingsController extends Controller
      */
     public function mailTemplates(): View
     {
+        OrderMessageTemplates::syncToDatabase();
+
         return view('settings.templates.mail', [
             'templates' => MailTemplate::query()->orderBy('name')->get(),
+            'predefinedSlugs' => OrderMessageTemplates::predefinedMailSlugs(),
             'breadcrumbs' => $this->crumbs('Mail Şablonları'),
         ]);
     }
@@ -999,8 +1020,11 @@ class SettingsController extends Controller
      */
     public function smsTemplates(): View
     {
+        OrderMessageTemplates::syncToDatabase();
+
         return view('settings.templates.sms', [
             'templates' => SmsTemplate::query()->orderBy('name')->get(),
+            'predefinedSlugs' => OrderMessageTemplates::predefinedSmsSlugs(),
             'breadcrumbs' => $this->crumbs('SMS Şablonları'),
         ]);
     }
@@ -1077,7 +1101,7 @@ class SettingsController extends Controller
     private function crumbs(string $label): array
     {
         return [
-            ['label' => 'Dashboard', 'url' => route('dashboard')],
+            ['label' => 'Anasayfa', 'url' => route('dashboard')],
             ['label' => 'Ayarlar', 'url' => route('settings.index')],
             ['label' => $label],
         ];

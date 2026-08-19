@@ -140,6 +140,10 @@ class SmsService
             'tracking_number' => '454221545',
             'tracking_url' => 'https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=454221545',
             'cargo_company' => 'Yurtiçi Kargo',
+            'invoice_no' => 'ETF2026001',
+            'invoice_url' => 'https://example.com/fatura/ornek',
+            'return_cargo_name' => 'Yurtiçi Kargo',
+            'return_cargo_code' => '216625941',
             'status' => 'Kargoya verildi',
         ];
     }

@@ -1,10 +1,15 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-bs-theme="light">
+@php
+    $uiTheme = \App\Support\UiTheme::fromRequest();
+@endphp
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-bs-theme="{{ $uiTheme }}" style="color-scheme: {{ $uiTheme }}; background-color: {{ \App\Support\UiTheme::background($uiTheme) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', $title ?? 'Dashboard') — {{ $appBrandName ?? config('app.name', 'EtiCart') }}</title>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <x-theme-boot />
+    <title>@yield('title', $title ?? 'Anasayfa') — {{ $appBrandName ?? config('app.name', 'EtiCart') }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -57,5 +62,12 @@
     <x-sync-monitor />
 
     @stack('scripts')
+    <script>
+        (function () {
+            try {
+                sessionStorage.setItem('eticart.lastPanel', window.location.href);
+            } catch (error) {}
+        })();
+    </script>
 </body>
 </html>

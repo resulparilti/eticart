@@ -1,12 +1,17 @@
 @extends('layouts.app')
 
-@section('title', 'Queue Durumu')
+@section('title', 'Kuyruk (Queue)')
 
 @section('content')
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
-            <h1 class="h3 mb-1">Queue Durumu</h1>
-            <p class="eticart-muted mb-0">Bağlantı: <code>{{ $connection }}</code></p>
+            <h1 class="h3 mb-1">Kuyruk (Queue)</h1>
+            <p class="eticart-muted mb-0">
+                Toplu ürün işlemleri gibi arka plan işlerini izler.
+                Günlük sipariş/kargo takibi için gerekli değildir —
+                <a href="{{ route('settings.index') }}">Ayarlar</a> altındadır.
+                Bağlantı: <code>{{ $connection }}</code>
+            </p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <form method="POST" action="{{ route('admin.queue.process-now') }}">

@@ -13,6 +13,7 @@ use App\Models\SyncJobLog;
 use App\Models\UyumSoftProduct;
 use App\Support\ShopifyShippingAddress;
 use App\Support\UyumSoftOrderLineFormatter;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -22,6 +23,7 @@ class UyumSoftOrderSyncService
 {
     public function __construct(
         private readonly UyumSoftService $uyumSoftService,
+        private readonly UyumSoftEInvoiceService $eInvoiceService,
         private readonly SyncActivityTracker $activityTracker,
         private readonly OrderLifecycleService $lifecycle
     ) {
@@ -74,6 +76,7 @@ class UyumSoftOrderSyncService
             $invoiceCandidates = ShopifyOrder::query()
                 ->whereNotNull('uyumsoft_order_id')
                 ->whereNull('invoice_path')
+                ->whereNull('uyumsoft_einvoice_uuid')
                 ->orderByDesc('id')
                 ->limit($limit)
                 ->get();
@@ -188,35 +191,121 @@ class UyumSoftOrderSyncService
     public function syncOrder(ShopifyOrder $order): array
     {
         $order->loadMissing('items');
-        $pushed = false;
-        $invoice = false;
 
-        if ($order->uyumsoft_order_id === null && $this->shouldPush($order)) {
-            $result = $this->pushOrder($order);
-            $pushed = $result['pushed'];
-            $invoice = $result['invoice'];
-        } elseif ($order->invoice_path === null) {
-            $invoice = $this->pullInvoice($order);
+        if (! $this->activityTracker->current()) {
+            $this->activityTracker->start(
+                'uyumsoft_order_sync',
+                $order->order_number.' UyumSoft gönder / fatura çek',
+                2,
+                [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'manual' => true,
+                    'source' => 'order_detail',
+                ],
+                Auth::id()
+            );
         }
 
+        $this->activityTracker->markRunning($order->order_number.' UyumSoft işleniyor…');
+
+        try {
+            if (! $this->uyumSoftService->isConfigured()) {
+                throw new UyumSoftException('UyumSoft API bilgileri yapılandırılmamış.');
+            }
+
+            $pushed = false;
+            $invoice = false;
+
+            if ($order->uyumsoft_order_id === null && $this->shouldPush($order)) {
+                $this->activityTracker->log('info', 'UyumSoft sipariş oluşturma deneniyor…');
+                $result = $this->pushOrder($order);
+                $pushed = $result['pushed'];
+                $invoice = $result['invoice'];
+                $this->activityTracker->progress(1, 2, $pushed
+                    ? 'Sipariş UyumSoft’a yazıldı.'
+                    : 'Mevcut UyumSoft kaydı kontrol edildi.');
+            } elseif ($order->uyumsoft_order_id !== null) {
+                $this->activityTracker->log(
+                    'info',
+                    'UyumSoft sipariş kaydı mevcut ('.$order->uyumsoft_order_id.').'
+                );
+
+                if (! $order->hasInvoice()) {
+                    $this->activityTracker->log('info', 'Fatura sorgulanıyor…');
+                    $invoice = $this->pullInvoice($order);
+                } else {
+                    $this->activityTracker->log('info', 'Fatura zaten panelde mevcut.');
+                }
+
+                $this->activityTracker->progress(1, 2);
+            } elseif (! $this->shouldPush($order)) {
+                throw new UyumSoftException('Bu sipariş UyumSoft’a gönderilemez (iptal, iade veya kalem yok).');
+            } else {
+                $this->activityTracker->log('info', 'UyumSoft’a gönderilecek yeni satış bulunamadı.');
+            }
+
+            if (! $invoice && $order->fresh()?->hasInvoice() === false && $order->uyumsoft_order_id !== null) {
+                $this->activityTracker->log('info', 'Siparişe bağlı PDF/XML belge alınamadı.');
+            }
+
+            $freshOrder = $order->fresh(['items']) ?? $order;
+            $message = $this->buildSingleOrderMessage($freshOrder, $pushed, $invoice);
+            $synced = ($pushed ? 1 : 0) + ($invoice ? 1 : 0);
+            $documentError = filled($freshOrder->uyumsoft_invoice_id) && ! $freshOrder->hasInvoice();
+
+            $this->activityTracker->complete($message, $synced, $documentError ? 1 : 0, [
+                'pushed' => $pushed,
+                'invoice' => $invoice,
+                'order_id' => $order->id,
+                'manual' => true,
+                'invoice_matched' => filled($freshOrder->uyumsoft_invoice_id),
+                'document_downloaded' => $freshOrder->hasInvoice(),
+            ]);
+
+            return [
+                'pushed' => $pushed,
+                'invoice' => $invoice,
+                'message' => $message,
+            ];
+        } catch (Throwable $e) {
+            $this->markOrderError($order, $e->getMessage());
+            $this->activityTracker->fail($order->order_number.': '.$e->getMessage(), $e);
+
+            throw $e;
+        }
+    }
+
+    private function buildSingleOrderMessage(ShopifyOrder $order, bool $pushed, bool $invoice): string
+    {
         $parts = [];
+
         if ($pushed) {
             $parts[] = 'UyumSoft siparişi oluşturuldu';
         }
         if ($invoice) {
             $parts[] = 'fatura çekildi';
         }
+
         if ($parts === []) {
-            $parts[] = $order->uyumsoft_order_id
-                ? 'UyumSoft kaydı zaten var'
-                : 'UyumSoft’a gönderilecek yeni satış yok';
+            if ($order->uyumsoft_order_id) {
+                if ($order->hasInvoice()) {
+                    $parts[] = 'UyumSoft kaydı ve fatura zaten mevcut';
+                } elseif ($order->uyumsoft_invoice_id) {
+                    $parts[] = 'UyumSoft faturası eşleşti'
+                        .($order->uyumsoft_invoice_no ? ' ('.$order->uyumsoft_invoice_no.')' : '')
+                        .', ancak PDF/XML içeriği alınamadı';
+                } else {
+                    $parts[] = 'UyumSoft kaydı var, siparişe bağlı/eşleşen fatura bulunamadı';
+                }
+            } else {
+                $parts[] = 'UyumSoft’a gönderilecek yeni satış yok';
+            }
+        } elseif (! $invoice && $order->uyumsoft_order_id && ! $order->hasInvoice()) {
+            $parts[] = 'fatura henüz hazır değil';
         }
 
-        return [
-            'pushed' => $pushed,
-            'invoice' => $invoice,
-            'message' => implode(', ', $parts).'.',
-        ];
+        return implode(', ', $parts).'.';
     }
 
     /**
@@ -267,26 +356,39 @@ class UyumSoftOrderSyncService
 
         $invoice = null;
         if (filled($order->uyumsoft_invoice_id)) {
-            $invoice = [
+            $invoice = $this->uyumSoftService->getInvoiceDetails((string) $order->uyumsoft_invoice_id);
+            $invoice = array_merge([
                 'id' => $order->uyumsoft_invoice_id,
                 'invoiceId' => $order->uyumsoft_invoice_id,
                 'docNo' => $order->uyumsoft_invoice_no,
-            ];
+            ], $invoice);
         } else {
             $invoice = $this->uyumSoftService->findInvoiceForOrder(
                 $this->erpDocNo($order),
                 $order->order_number,
-                (string) $order->uyumsoft_order_id
+                (string) $order->uyumsoft_order_id,
+                [
+                    'customer_name' => $order->customer_name,
+                    'total' => $order->total_price,
+                    'currency' => $order->currency,
+                ]
             );
         }
 
         if ($invoice === null) {
+            $this->activityTracker->log('info', $order->order_number.' için sipariş numarası ile doğrulanmış fatura bulunamadı.', [
+                'uyumsoft_order_id' => $order->uyumsoft_order_id,
+                'erp_doc_no' => $this->erpDocNo($order),
+            ]);
+
             return false;
         }
 
         $invoiceId = $this->extractRecordId($invoice) ?: $order->uyumsoft_invoice_id;
         $invoiceNo = (string) ($invoice['invoiceNo']
+            ?? $invoice['eDocNo']
             ?? $invoice['eArchiveNo']
+            ?? $invoice['eInvoiceDocNo']
             ?? $invoice['voucherNo']
             ?? $invoice['docNo']
             ?? $order->uyumsoft_invoice_no
@@ -299,37 +401,171 @@ class UyumSoftOrderSyncService
             'uyumsoft_last_error' => null,
         ]);
 
-        $pdf = $invoiceId ? $this->uyumSoftService->getInvoicePdf($invoiceId) : null;
-        if (is_string($pdf) && $pdf !== '') {
-            $this->attachInvoicePdf($order, $pdf, $invoiceNo !== '' ? $invoiceNo : $order->order_number);
-            $this->activityTracker->log('info', $order->order_number.' faturası UyumSoft’tan alındı.');
+        $document = $invoiceId ? $this->uyumSoftService->getInvoiceDocument($invoiceId) : null;
+        if ($document === null) {
+            $invoiceUuid = $this->resolveOfficialInvoiceUuid($invoice, $invoiceNo, $order);
+            if ($invoiceUuid !== '') {
+                $this->attachPortalInvoice(
+                    $order,
+                    $invoiceNo !== '' ? $invoiceNo : (string) $order->order_number,
+                    $invoiceUuid
+                );
+                $this->activityTracker->log(
+                    'info',
+                    $order->order_number.' faturası portal belgesi olarak bağlandı; dosya kaydedilmedi.',
+                    [
+                        'invoice_id' => $invoiceId,
+                        'invoice_no' => $invoiceNo,
+                        'invoice_uuid' => $invoiceUuid,
+                    ]
+                );
+
+                return true;
+            }
+        }
+
+        if ($document !== null) {
+            $this->attachInvoiceDocument(
+                $order,
+                $document['content'],
+                $invoiceNo !== '' ? $invoiceNo : $order->order_number,
+                $document['extension'],
+                $document['uuid'] ?? null
+            );
+            $this->activityTracker->log(
+                'info',
+                sprintf(
+                    '%s faturası UyumSoft’tan %s olarak alındı (%s bayt, kaynak: %s).',
+                    $order->order_number,
+                    strtoupper($document['extension']),
+                    number_format(strlen($document['content']), 0, ',', '.'),
+                    $document['source']
+                ),
+                [
+                    'invoice_id' => $invoiceId,
+                    'invoice_no' => $invoiceNo,
+                    'format' => $document['extension'],
+                    'bytes' => strlen($document['content']),
+                    'source' => $document['source'],
+                ]
+            );
 
             return true;
         }
 
-        $this->activityTracker->log('info', $order->order_number.' için UyumSoft faturası bulundu ama PDF yok.');
+        $this->activityTracker->log('warning', $order->order_number.' için fatura kaydı bulundu fakat PDF/XML içeriği alınamadı.', [
+            'invoice_id' => $invoiceId,
+            'invoice_no' => $invoiceNo,
+            'available_fields' => array_keys($invoice),
+        ]);
 
         return false;
     }
 
-    private function attachInvoicePdf(ShopifyOrder $order, string $binary, string $invoiceNo): void
+    /**
+     * @param  array<string, mixed>  $invoice
+     */
+    private function resolveOfficialInvoiceUuid(array $invoice, string $invoiceNo, ShopifyOrder $order): string
     {
-        $filename = Str::uuid()->toString().'.pdf';
-        $path = 'order-invoices/'.$order->id.'/'.$filename;
-        Storage::disk('public')->put($path, $binary);
+        $uuid = trim((string) collect([
+            $invoice['eGuid'] ?? null,
+            $invoice['guID'] ?? null,
+            $invoice['uuid'] ?? null,
+            $invoice['guid'] ?? null,
+        ])->first(static fn ($value): bool => filled($value)));
 
+        if ($uuid !== '') {
+            return $uuid;
+        }
+
+        if (! $this->eInvoiceService->hasDedicatedCredentials()) {
+            return '';
+        }
+
+        $documentNo = trim((string) collect([
+            $invoiceNo,
+            $invoice['eDocNo'] ?? null,
+            $invoice['docNo'] ?? null,
+            $order->uyumsoft_invoice_no,
+        ])->first(static fn ($value): bool => filled($value) && ! str_contains((string) $value, ' ')));
+
+        if ($documentNo === '') {
+            return '';
+        }
+
+        try {
+            $this->activityTracker->log('info', 'e-Fatura giden kutusunda belge numarası aranıyor.', [
+                'invoice_no' => $documentNo,
+            ]);
+            $found = $this->eInvoiceService->findOutboxInvoice($documentNo);
+        } catch (Throwable $e) {
+            $this->activityTracker->log('warning', 'Giden kutu sorgusu başarısız: '.$e->getMessage(), [
+                'invoice_no' => $documentNo,
+            ]);
+            Log::channel('stack')->warning('UyumSoft official invoice lookup failed', [
+                'invoice_no' => $documentNo,
+                'message' => $e->getMessage(),
+            ]);
+
+            return '';
+        }
+
+        if ($found === null) {
+            return '';
+        }
+
+        return trim($found['document_id'] !== '' ? $found['document_id'] : $found['invoice_id']);
+    }
+
+    private function attachPortalInvoice(ShopifyOrder $order, string $invoiceNo, string $uuid): void
+    {
         if ($order->invoice_path && Storage::disk('public')->exists($order->invoice_path)) {
             Storage::disk('public')->delete($order->invoice_path);
         }
 
         $order->update([
-            'invoice_path' => $path,
+            'invoice_path' => null,
             'invoice_original_name' => 'UyumSoft-'.$invoiceNo.'.pdf',
             'invoice_uploaded_at' => now(),
             'invoice_token' => $order->newInvoiceToken(),
+            'uyumsoft_einvoice_uuid' => $uuid,
             'shopify_needs_push' => true,
         ]);
 
+        $this->publishInvoiceLink($order);
+    }
+
+    private function attachInvoiceDocument(
+        ShopifyOrder $order,
+        string $binary,
+        string $invoiceNo,
+        string $extension,
+        ?string $einvoiceUuid = null
+    ): void {
+        $extension = strtolower($extension) === 'xml' ? 'xml' : 'pdf';
+
+        if ($order->invoice_path && Storage::disk('public')->exists($order->invoice_path)) {
+            Storage::disk('public')->delete($order->invoice_path);
+        }
+
+        $filename = Str::uuid()->toString().'.'.$extension;
+        $path = 'order-invoices/'.$order->id.'/'.$filename;
+        Storage::disk('public')->put($path, $binary);
+
+        $order->update([
+            'invoice_path' => $path,
+            'invoice_original_name' => 'UyumSoft-'.$invoiceNo.'.'.$extension,
+            'invoice_uploaded_at' => now(),
+            'invoice_token' => $order->newInvoiceToken(),
+            'uyumsoft_einvoice_uuid' => filled($einvoiceUuid) ? $einvoiceUuid : $order->uyumsoft_einvoice_uuid,
+            'shopify_needs_push' => true,
+        ]);
+
+        $this->publishInvoiceLink($order);
+    }
+
+    private function publishInvoiceLink(ShopifyOrder $order): void
+    {
         $fresh = $order->fresh(['shipments.cargoCompany']) ?? $order;
         $invoiceUrl = $fresh->invoiceUrl();
         if (filled($invoiceUrl)) {
@@ -498,7 +734,20 @@ class UyumSoftOrderSyncService
      */
     private function extractRecordId(array $record): ?string
     {
-        foreach (['id', 'orderId', 'orderMId', 'invoiceId', 'docId', 'docNo'] as $key) {
+        foreach ([
+            'id',
+            'orderId',
+            'orderMId',
+            'invoiceId',
+            'invoiceMId',
+            'eInvoiceId',
+            'eArchiveId',
+            'documentId',
+            'docId',
+            'uuid',
+            'ettn',
+            'docNo',
+        ] as $key) {
             $value = $record[$key] ?? null;
             if (filled($value)) {
                 return (string) $value;

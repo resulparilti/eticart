@@ -11,7 +11,7 @@
         <a href="{{ route('products.show', $product) }}" class="btn btn-outline-secondary">Geri</a>
     </div>
 
-    <div class="eticart-card p-3" style="max-width: 820px;">
+    <div class="eticart-card p-3" style="max-width: 1080px;">
         <form method="POST" action="{{ route('products.update', $product) }}" enctype="multipart/form-data"
               data-confirm="Değişiklikler kaydedilsin mi? Shopify eşitleme seçiliyse ürün Shopify’a da gönderilecek.">
             @csrf
@@ -61,8 +61,69 @@
                 <input id="image_files" type="file" name="image_files[]" class="form-control @error('image_files') is-invalid @enderror @error('image_files.*') is-invalid @enderror" accept="image/*" multiple>
                 @error('image_files') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
                 @error('image_files.*') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
-                <div class="form-text">Yüklenen görseller kaydedilir; Shopify eşitlemede ürün galerisine gönderilir.</div>
+                <div class="form-text">Ana ürün galerisi. Aşağıdan her varyanta ayrı görsel de yükleyebilirsiniz; Shopify’a ürün açmadan önce burada hazırlanır.</div>
             </div>
+
+            @php
+                $editVariants = is_array($product->variant_info['variants'] ?? null)
+                    ? $product->variant_info['variants']
+                    : [];
+            @endphp
+            @if ($editVariants !== [])
+                <div class="mb-3">
+                    <label class="form-label">Varyant görselleri</label>
+                    <p class="form-text mt-0">Her renk/beden için ayrı görsel. Shopify’a eşitlemede ilgili varyanta bağlanır.</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Varyant</th>
+                                    <th>Görsel</th>
+                                    <th>Yeni dosya</th>
+                                    <th>veya URL</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($editVariants as $index => $variant)
+                                    @php
+                                        $variantImage = is_array($variant) ? ($variant['image'] ?? '') : '';
+                                        $variantTitle = is_array($variant) ? ($variant['title'] ?? 'Varyant') : 'Varyant';
+                                    @endphp
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">{{ $variantTitle }}</div>
+                                            <div class="small eticart-muted">{{ $variant['sku'] ?? '' }}</div>
+                                        </td>
+                                        <td style="width: 72px;">
+                                            @if ($variantImage)
+                                                <img src="{{ $variantImage }}" alt="{{ $variantTitle }}" class="rounded border" style="width: 56px; height: 56px; object-fit: cover;">
+                                            @else
+                                                <span class="small eticart-muted">Yok</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <input type="file" name="variant_image_files[{{ $index }}]" class="form-control form-control-sm" accept="image/*">
+                                        </td>
+                                        <td>
+                                            <input type="url" name="variant_image_urls[{{ $index }}]" class="form-control form-control-sm" placeholder="https://..." value="{{ old('variant_image_urls.'.$index) }}">
+                                        </td>
+                                        <td class="text-nowrap">
+                                            @if ($variantImage)
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" name="variant_image_remove[{{ $index }}]" value="1" id="variant_remove_{{ $index }}">
+                                                    <label class="form-check-label small" for="variant_remove_{{ $index }}">Kaldır</label>
+                                                </div>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    @error('variant_image_files.*') <div class="invalid-feedback d-block">{{ $message }} </div> @enderror
+                </div>
+            @endif
 
             <div class="form-check mb-3">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="is_active" @checked(old('is_active', $product->is_active))>

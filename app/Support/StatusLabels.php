@@ -12,6 +12,7 @@ final class StatusLabels
     public static function fulfillmentMap(): array
     {
         return [
+            'received' => 'Sipariş alındı',
             'unfulfilled' => 'Karşılanmadı',
             'preparing' => 'Hazırlanıyor',
             'partial' => 'Kısmen karşılandı',
@@ -19,7 +20,7 @@ final class StatusLabels
             'delivered' => 'Kargo teslim edildi',
             'restocked' => 'Stoğa iade',
             'cancelled' => 'İptal',
-            'null' => 'Karşılanmadı',
+            'null' => 'Sipariş alındı',
         ];
     }
 
@@ -55,8 +56,22 @@ final class StatusLabels
         ];
     }
 
+    /**
+     * Kargoya verilmeden önceki sipariş durumları (menü sayacı).
+     *
+     * @return array<int, string>
+     */
+    public static function awaitingShipmentStatuses(): array
+    {
+        return ['received', 'unfulfilled', 'partial', 'preparing', 'null'];
+    }
+
     public static function fulfillment(?string $status): string
     {
+        if ($status === null || trim($status) === '') {
+            return 'Sipariş alındı';
+        }
+
         return self::label(self::fulfillmentMap(), $status);
     }
 
@@ -76,6 +91,7 @@ final class StatusLabels
             'fulfilled' => 'success',
             'delivered' => 'success',
             'preparing' => 'info',
+            'received', 'null' => 'secondary',
             'partial' => 'warning',
             'cancelled', 'restocked' => 'danger',
             default => 'secondary',

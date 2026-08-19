@@ -21,7 +21,8 @@ class SettingsGeneralTest extends TestCase
             ->get(route('settings.index'))
             ->assertOk()
             ->assertSee('Genel')
-            ->assertSee('Sistem adı');
+            ->assertSee('Sistem adı')
+            ->assertSee('Raporlar');
 
         $this->actingAs($user)
             ->get(route('settings.general'))

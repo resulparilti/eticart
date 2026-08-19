@@ -38,6 +38,8 @@ class ShipmentController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status')->toString());
+        } elseif ($request->boolean('awaiting')) {
+            $query->awaitingDelivery();
         }
 
         if ($request->filled('cargo_company_id')) {
@@ -64,10 +66,10 @@ class ShipmentController extends Controller
         return view('shipments.index', [
             'shipments' => $query->paginate(20)->withQueryString(),
             'companies' => CargoCompany::query()->orderBy('name')->get(),
-            'filters' => $request->only(['status', 'cargo_company_id', 'q', 'date_from', 'date_to']),
+            'filters' => $request->only(['status', 'cargo_company_id', 'q', 'date_from', 'date_to', 'awaiting']),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
-                ['label' => 'Kargo'],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
+                ['label' => 'Kargolar'],
             ],
         ]);
     }
@@ -93,7 +95,7 @@ class ShipmentController extends Controller
             'createMeta' => $createMeta,
             'isYurtici' => $shipment->cargoCompany?->provider_type === 'yurtici',
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Kargo', 'url' => route('shipments.index')],
                 ['label' => $shipment->tracking_number ?: ('#'.$shipment->id)],
             ],
@@ -111,7 +113,7 @@ class ShipmentController extends Controller
             'order' => $order,
             'companies' => CargoCompany::apiReady(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Siparişler', 'url' => route('orders.index')],
                 ['label' => $order->order_number, 'url' => route('orders.show', $order)],
                 ['label' => 'Kargo Oluştur'],

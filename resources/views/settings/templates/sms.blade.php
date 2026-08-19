@@ -4,14 +4,19 @@
 
 @section('content')
     @php
-        $tokens = ['customer_name', 'order_number', 'total_price', 'tracking_number', 'tracking_url', 'cargo_company'];
+        $tokens = ['customer_name', 'order_number', 'total_price', 'currency', 'tracking_number', 'tracking_url', 'cargo_company', 'invoice_no', 'invoice_url', 'return_cargo_name', 'return_cargo_code'];
         $sample = [
             'customer_name' => 'Ahmet Solmaz',
             'order_number' => '#23423434',
             'total_price' => '4500',
+            'currency' => 'TL',
             'tracking_number' => '454221545',
             'tracking_url' => 'https://yurticikargo.com/takip/454221545',
             'cargo_company' => 'Yurtiçi Kargo',
+            'invoice_no' => 'ETF2026001',
+            'invoice_url' => 'https://example.com/fatura/ornek',
+            'return_cargo_name' => 'Yurtiçi Kargo',
+            'return_cargo_code' => '216625941',
         ];
     @endphp
 
@@ -36,6 +41,9 @@
                     <button class="accordion-button {{ $loop->first ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#smsTpl{{ $template->id }}">
                         <span class="fw-semibold">{{ $template->name }}</span>
                         <span class="ms-2 small eticart-muted">{{ $template->slug }}</span>
+                        @if (in_array($template->slug, $predefinedSlugs ?? [], true))
+                            <span class="badge text-bg-light border ms-2">Ön tanımlı</span>
+                        @endif
                     </button>
                 </h2>
                 <div id="smsTpl{{ $template->id }}" class="accordion-collapse collapse {{ $loop->first ? 'show' : '' }}" data-bs-parent="#smsTemplatesAccordion">

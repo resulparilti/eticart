@@ -3,6 +3,13 @@
 @section('title', $product->title)
 
 @section('content')
+@php
+    $lightboxImages = array_values(array_unique(array_filter(array_map(
+        'strval',
+        array_merge($images ?? [], array_column($variants ?? [], 'image') ?: [])
+    ))));
+@endphp
+<div x-data='productMedia(@js($lightboxImages))'>
     <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <div>
             <h1 class="h3 mb-1">
@@ -54,17 +61,7 @@
         <div class="col-lg-4">
             <div class="eticart-card p-3 h-100">
                 <h2 class="h6 mb-3">Görseller</h2>
-                @if (empty($images))
-                    <p class="eticart-muted mb-0">Görsel yok. Düzenle’den URL ekleyebilirsiniz.</p>
-                @else
-                    <div class="row g-2">
-                        @foreach ($images as $url)
-                            <div class="col-6">
-                                <img src="{{ $url }}" alt="" class="img-fluid rounded border" loading="lazy" style="max-height:140px;object-fit:cover;width:100%;">
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
+                <x-product-gallery :images="$images" :alt="$product->title" empty="Görsel yok. Düzenle’den URL ekleyebilirsiniz." />
             </div>
         </div>
         <div class="col-lg-4">
@@ -117,6 +114,17 @@
                         Shopify’a Eşitle
                     </button>
                 </form>
+                <form method="POST" action="{{ route('products.pull-shopify-one', $product) }}" class="mt-2"
+                      data-confirm="Shopify’daki görseller, meta alanlar ve koleksiyonlar bu ürüne çekilsin mi?">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-outline-primary"
+                            @disabled(! $shopifyConfigured || (blank($product->shopify_id) && blank($product->shopifyProduct?->shopify_product_id)))>
+                        Shopify’dan eşitle
+                    </button>
+                </form>
+                <div class="form-text mt-2">
+                    Shopify’dan eşitle, mağazada yüklenen ürün/varyant görsellerini, meta alanları ve koleksiyon tercihlerini panele alır.
+                </div>
             </div>
         </div>
     </div>
@@ -151,19 +159,78 @@
     <div class="eticart-card p-3">
         <h2 class="h6 mb-3">Varyantlar ({{ count($variants) }})</h2>
         <div class="table-responsive">
-            <x-table :headers="['Varyant', 'SKU', 'Barkod', 'Fiyat', 'Stok']">
+            <x-table :headers="['Görsel', 'Varyant', 'SKU', 'Barkod', 'Fiyat', 'Stok']">
                 @foreach ($variants as $variant)
                     <tr>
+                        <td style="width: 64px;">
+                            @if (! empty($variant['image']))
+                                <button type="button"
+                                        class="eticart-gallery__thumb p-0 border-0 bg-transparent"
+                                        data-full-url="{{ $variant['image'] }}"
+                                        @click="openLightbox($event.currentTarget.getAttribute('data-full-url'))"
+                                        title="Büyüt">
+                                    <img src="{{ \App\Support\ShopifyMetafieldFormatter::cdnWidth($variant['image'], 96) }}"
+                                         alt="{{ $variant['title'] ?? 'Varyant' }}"
+                                         class="rounded border"
+                                         loading="lazy"
+                                         decoding="async"
+                                         width="48"
+                                         height="48"
+                                         style="width: 48px; height: 48px; object-fit: cover;">
+                                </button>
+                            @else
+                                <span class="small eticart-muted">—</span>
+                            @endif
+                        </td>
                         <td>{{ $variant['title'] ?? '-' }}</td>
                         <td>{{ $variant['sku'] ?? '-' }}</td>
                         <td>{{ $variant['barcode'] ?? '-' }}</td>
-                        <td>₺{{ number_format((float) ($variant['price'] ?? 0), 2) }}</td>
+                        <td>
+                            @if (! empty($variant['compare_at_price']) && (float) $variant['compare_at_price'] > (float) ($variant['price'] ?? 0))
+                                <span class="text-decoration-line-through eticart-muted me-1">₺{{ number_format((float) $variant['compare_at_price'], 2) }}</span>
+                            @endif
+                            ₺{{ number_format((float) ($variant['price'] ?? 0), 2) }}
+                        </td>
                         <td>{{ $variant['stock'] ?? '-' }}</td>
                     </tr>
                 @endforeach
             </x-table>
         </div>
     </div>
+
+    @php
+        $shopifyCollections = is_array($product->shopifyProduct?->collections) ? $product->shopifyProduct->collections : [];
+        $shopifyMetafields = $shopifyMetafields ?? [];
+    @endphp
+    @if ($shopifyMetafields !== [] || $shopifyCollections !== [])
+        <div class="row g-3 mt-1">
+            @if ($shopifyCollections !== [])
+                <div class="col-12 col-lg-6">
+                    <div class="eticart-card p-3 h-100">
+                        <h2 class="h6 mb-3">Shopify koleksiyonları</h2>
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach ($shopifyCollections as $collection)
+                                <span class="badge text-bg-light border">
+                                    {{ $collection['title'] ?? $collection['handle'] ?? $collection['id'] ?? 'Koleksiyon' }}
+                                    @if (($collection['kind'] ?? '') === 'smart')
+                                        <span class="eticart-muted">· otomatik</span>
+                                    @endif
+                                </span>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
+            @if ($shopifyMetafields !== [])
+                <div class="col-12">
+                    <x-shopify-metafields :fields="$shopifyMetafields" />
+                </div>
+            @endif
+        </div>
+    @endif
+
+    <x-image-lightbox />
+</div>
 @endsection
 
 @push('scripts')

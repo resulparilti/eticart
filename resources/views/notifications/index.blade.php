@@ -1,14 +1,15 @@
 @extends('layouts.app')
 
-@section('title', 'Bilgilendirmeler')
+@section('title', 'Mesaj bilgilendirmeleri')
 
 @section('content')
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
-            <h1 class="h3 mb-1">Bilgilendirmeler</h1>
+            <h1 class="h3 mb-1">Mesaj bilgilendirmeleri</h1>
             <p class="eticart-muted mb-0">Müşteriye gönderilen mail ve SMS kayıtları.</p>
         </div>
         <div class="d-flex gap-2">
+            <a href="{{ route('messages.send') }}" class="btn btn-primary">Mesaj gönder</a>
             <a href="{{ route('notifications.templates') }}" class="btn btn-outline-secondary">Şablonlar</a>
         </div>
     </div>
@@ -61,31 +62,6 @@
         </div>
     </div>
 
-    <div class="eticart-card p-3 mb-3">
-        <h2 class="h6 mb-3">Test Gönderimi</h2>
-        <form method="POST" action="{{ route('notifications.test') }}" class="row g-2 align-items-end">
-            @csrf
-            <div class="col-md-2">
-                <label class="form-label">Kanal</label>
-                <select name="channel" class="form-select" required>
-                    <option value="mail">Mail</option>
-                    <option value="sms">SMS</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Alıcı</label>
-                <input type="text" name="recipient" class="form-control" placeholder="email veya telefon" required>
-            </div>
-            <div class="col-md-5">
-                <label class="form-label">Mesaj</label>
-                <input type="text" name="message" class="form-control" value="EtiCart test bildirimi" required>
-            </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary w-100" type="submit">Gönder</button>
-            </div>
-        </form>
-    </div>
-
     @if ($notifications->isEmpty())
         <x-empty-state title="Bildirim yok" message="Gönderilen mail/SMS kayıtları burada listelenir." icon="bi-bell" />
     @else
@@ -109,7 +85,7 @@
                         <td>{{ $item->recipient }}</td>
                         <td>
                             <div class="fw-semibold">{{ $item->subject ?: '-' }}</div>
-                            @if ($item->type === 'mail' && $item->body !== 'shipment-invoice')
+                            @if ($item->type === 'mail' && ! in_array($item->body, ['shipment-invoice', 'invoice-notice', 'cargo-notice'], true))
                                 <small class="eticart-muted">{{ \Illuminate\Support\Str::limit($item->body, 80) }}</small>
                             @endif
                             @php $report = $item->mailReport(); @endphp

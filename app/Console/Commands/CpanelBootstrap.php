@@ -41,7 +41,7 @@ class CpanelBootstrap extends Command
         Artisan::call('view:cache');
         $this->line(Artisan::output());
 
-        $cronMin = max(15, (int) config('eticart.schedule_cron_minutes', 15));
+        $cronMin = \App\Support\SyncIntervalOptions::minCronMinutes();
         $this->newLine();
         $this->info('Kurulum tamamlandı.');
         $this->line('cPanel Cron (her '.$cronMin.' dk):');

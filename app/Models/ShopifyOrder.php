@@ -47,6 +47,7 @@ class ShopifyOrder extends Model
         'uyumsoft_order_id',
         'uyumsoft_invoice_id',
         'uyumsoft_invoice_no',
+        'uyumsoft_einvoice_uuid',
         'uyumsoft_pushed_at',
         'uyumsoft_last_error',
     ];
@@ -147,7 +148,8 @@ class ShopifyOrder extends Model
                         $pending->whereNull('shopify_pushed_at')
                             ->where(function ($local): void {
                                 $local->whereIn('fulfillment_status', ['preparing', 'fulfilled', 'delivered'])
-                                    ->orWhereNotNull('invoice_path');
+                                    ->orWhereNotNull('invoice_path')
+                                    ->orWhereNotNull('uyumsoft_einvoice_uuid');
                             });
                     });
             });
@@ -180,6 +182,37 @@ class ShopifyOrder extends Model
     }
 
     /**
+     * Kargoya verilmeden önceki siparişler: alındı, karşılanmadı, kısmen karşılandı, hazırlanıyor.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<ShopifyOrder>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<ShopifyOrder>
+     */
+    public function scopeOpenUndelivered($query)
+    {
+        return $query->where(function ($builder): void {
+            $builder->whereNull('fulfillment_status')
+                ->orWhere('fulfillment_status', '')
+                ->orWhereIn('fulfillment_status', \App\Support\StatusLabels::awaitingShipmentStatuses());
+        });
+    }
+
+    /**
+     * UyumSoft veya yerel fatura belgesi olan siparişler.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<ShopifyOrder>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<ShopifyOrder>
+     */
+    public function scopeWithInvoice($query)
+    {
+        return $query->where(function ($builder): void {
+            $builder->whereNotNull('uyumsoft_einvoice_uuid')
+                ->orWhereNotNull('uyumsoft_invoice_id')
+                ->orWhereNotNull('uyumsoft_invoice_no')
+                ->orWhereNotNull('invoice_path');
+        });
+    }
+
+    /**
      * Resolve city (il) and town (ilçe) for cargo APIs.
      *
      * Shopify: province=il, city=ilçe, zip=posta kodu. Posta kodu asla il olarak gönderilmez.
@@ -198,7 +231,13 @@ class ShopifyOrder extends Model
 
     public function hasInvoice(): bool
     {
-        return filled($this->invoice_path);
+        return filled($this->invoice_path) || filled($this->uyumsoft_einvoice_uuid);
+    }
+
+    public function hasLocalInvoiceFile(): bool
+    {
+        return filled($this->invoice_path)
+            && Storage::disk('public')->exists((string) $this->invoice_path);
     }
 
     public function ensureInvoiceToken(): string
@@ -220,7 +259,7 @@ class ShopifyOrder extends Model
 
     public function invoiceUrl(): ?string
     {
-        if (! filled($this->invoice_path)) {
+        if (! $this->hasInvoice()) {
             return null;
         }
 
@@ -244,7 +283,7 @@ class ShopifyOrder extends Model
         }
 
         $ext = strtolower((string) pathinfo((string) ($this->invoice_original_name ?: $this->invoice_path), PATHINFO_EXTENSION));
-        if (! in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp'], true)) {
+        if (! in_array($ext, ['pdf', 'xml', 'png', 'jpg', 'jpeg', 'webp'], true)) {
             $ext = 'pdf';
         }
 
@@ -256,6 +295,7 @@ class ShopifyOrder extends Model
         $ext = strtolower((string) pathinfo($this->invoiceAttachmentName(), PATHINFO_EXTENSION));
 
         return match ($ext) {
+            'xml' => 'application/xml',
             'png' => 'image/png',
             'jpg', 'jpeg' => 'image/jpeg',
             'webp' => 'image/webp',
@@ -344,11 +384,39 @@ class ShopifyOrder extends Model
      */
     public function shipmentInvoiceMails(): \Illuminate\Database\Eloquent\Collection
     {
+        return $this->customerNoticeMails();
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Collection<int, Notification>
+     */
+    public function customerNoticeMails(): \Illuminate\Database\Eloquent\Collection
+    {
         return $this->notifications()
             ->where('type', 'mail')
-            ->where('body', 'shipment-invoice')
             ->latest()
-            ->limit(15)
+            ->limit(20)
             ->get();
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Collection<int, Notification>
+     */
+    public function customerNotices(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->notifications()
+            ->latest()
+            ->limit(25)
+            ->get();
+    }
+
+    public function lastSentNotice(string $body): ?Notification
+    {
+        return $this->notifications()
+            ->where('type', 'mail')
+            ->where('body', $body)
+            ->where('status', 'sent')
+            ->latest('id')
+            ->first();
     }
 }

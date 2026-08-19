@@ -35,7 +35,7 @@ class UserNoteController extends Controller
             'notes' => $notes,
             'tab' => $tab,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Notlar'],
             ],
         ]);

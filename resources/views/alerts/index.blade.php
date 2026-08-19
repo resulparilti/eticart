@@ -55,7 +55,7 @@
             <div class="eticart-card">
                 <div class="list-group list-group-flush">
                     @foreach ($notifications as $item)
-                        <div class="list-group-item py-3 {{ $item->isUnread() ? 'bg-light' : '' }}">
+                        <div class="list-group-item py-3 {{ $item->isUnread() ? 'eticart-alert-unread' : '' }}">
                             <div class="d-flex gap-3 align-items-start">
                                 <input type="checkbox" class="form-check-input mt-1 alert-id" name="ids[]" value="{{ $item->id }}" form="alertsBulkForm">
                                 <a href="{{ route('alerts.read', $item) }}" class="text-decoration-none text-body flex-grow-1 min-w-0">

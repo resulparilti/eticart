@@ -42,7 +42,7 @@
         <div class="eticart-sync-panel__head">
             <div>
                 <div class="fw-semibold">İşlem izleyici</div>
-                <div class="small eticart-muted">Detay için kayda tıklayın</div>
+                <div class="small eticart-muted">Bekleyen ve devam eden işlemler. Bitmişler İşlem Geçmişi’nde.</div>
             </div>
             <div class="d-flex gap-1">
                 <button

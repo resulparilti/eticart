@@ -46,6 +46,12 @@ return [
         'username' => env('UYUMSOFT_API_USER'),
         'password' => env('UYUMSOFT_API_PASSWORD'),
         'base_url' => env('UYUMSOFT_BASE_URL'),
+        'einvoice_wsdl' => env(
+            'UYUMSOFT_EINVOICE_WSDL',
+            'https://efatura.uyumsoft.com.tr/Services/Integration?wsdl'
+        ),
+        'einvoice_username' => env('UYUMSOFT_EINVOICE_USER'),
+        'einvoice_password' => env('UYUMSOFT_EINVOICE_PASSWORD'),
         'warehouse_id' => env('UYUMSOFT_WAREHOUSE_ID'),
         'branch_code' => env('UYUMSOFT_BRANCH_CODE'),
     ],

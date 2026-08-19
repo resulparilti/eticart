@@ -139,7 +139,11 @@
                 @php
                     $cargoShipment = $order->latestCargoShipment();
                 @endphp
-                <tr data-order-id="{{ $order->id }}">
+                <tr data-order-id="{{ $order->id }}"
+                    data-order-number="{{ $order->order_number }}"
+                    data-has-email="{{ filled($order->customer_email) ? '1' : '0' }}"
+                    data-has-phone="{{ filled($order->customer_phone) ? '1' : '0' }}"
+                    class="order-row">
                     <td>
                         <input type="checkbox"
                                class="form-check-input order-select-checkbox"
@@ -180,6 +184,19 @@
             {{ $orders->links() }}
         </div>
     @endif
+
+    <div id="orderContextMenu" class="eticart-context-menu d-none" role="menu">
+        <button type="button" class="eticart-context-menu__item" data-action="sms" role="menuitem">
+            <i class="bi bi-phone me-2"></i> SMS gönder
+        </button>
+        <button type="button" class="eticart-context-menu__item" data-action="mail" role="menuitem">
+            <i class="bi bi-envelope me-2"></i> Mail gönder
+        </button>
+        <div class="eticart-context-menu__sep"></div>
+        <a href="#" class="eticart-context-menu__item" data-action="open" role="menuitem">
+            <i class="bi bi-box-arrow-up-right me-2"></i> Siparişi görüntüle
+        </a>
+    </div>
 @endsection
 
 @push('styles')
@@ -354,6 +371,99 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     refreshSelectionUi();
+
+    const contextMenu = document.getElementById('orderContextMenu');
+    const templates = @json($messageTemplates ?? []);
+    const smsConfigured = @json((bool) ($smsConfigured ?? false));
+    const sendTemplateUrl = @json(url('/orders/__ID__/template-message'));
+    let contextOrder = null;
+
+    const hideContextMenu = () => contextMenu?.classList.add('d-none');
+
+    const showContextMenu = (event, row) => {
+        contextOrder = {
+            id: Number(row.dataset.orderId),
+            number: row.dataset.orderNumber || '',
+            hasEmail: row.dataset.hasEmail === '1',
+            hasPhone: row.dataset.hasPhone === '1',
+        };
+        const smsBtn = contextMenu.querySelector('[data-action="sms"]');
+        const mailBtn = contextMenu.querySelector('[data-action="mail"]');
+        const openLink = contextMenu.querySelector('[data-action="open"]');
+        smsBtn.disabled = !smsConfigured || !contextOrder.hasPhone;
+        mailBtn.disabled = !contextOrder.hasEmail;
+        openLink.href = @json(url('/orders')) + '/' + contextOrder.id;
+
+        contextMenu.classList.remove('d-none');
+        const menuWidth = contextMenu.offsetWidth;
+        const menuHeight = contextMenu.offsetHeight;
+        const x = Math.min(event.clientX, window.innerWidth - menuWidth - 8);
+        const y = Math.min(event.clientY, window.innerHeight - menuHeight - 8);
+        contextMenu.style.left = `${x}px`;
+        contextMenu.style.top = `${y}px`;
+    };
+
+    document.querySelectorAll('tr.order-row').forEach((row) => {
+        row.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            showContextMenu(event, row);
+        });
+    });
+
+    document.addEventListener('click', hideContextMenu);
+    document.addEventListener('scroll', hideContextMenu, true);
+    window.addEventListener('resize', hideContextMenu);
+
+    const sendTemplate = async (channel) => {
+        if (!contextOrder) return;
+        const options = templates.map((tpl) => `<option value="${tpl.key}">${tpl.label}</option>`).join('');
+        const channelLabel = channel === 'sms' ? 'SMS' : 'Mail';
+        const result = await Swal.fire({
+            title: channelLabel + ' şablonu',
+            html: `<div class="text-start"><p class="small mb-2"><strong>${contextOrder.number}</strong> için şablon seçin.</p>
+                   <select id="swalTemplateKey" class="form-select">${options}</select></div>`,
+            showCancelButton: true,
+            confirmButtonText: 'Kuyruğa al ve gönder',
+            cancelButtonText: 'Vazgeç',
+            preConfirm: () => document.getElementById('swalTemplateKey')?.value,
+        });
+        if (!result.isConfirmed || !result.value) return;
+
+        try {
+            const response = await fetch(sendTemplateUrl.replace('__ID__', String(contextOrder.id)), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({
+                    channel,
+                    template_key: result.value,
+                }),
+            });
+            const payload = await response.json();
+            await Swal.fire({
+                icon: payload.ok ? 'success' : 'error',
+                title: payload.ok ? 'Kuyruğa alındı' : 'Gönderilemedi',
+                text: payload.message || '',
+            });
+        } catch (error) {
+            Swal.fire({ icon: 'error', title: 'İstek başarısız', text: error.message || 'Beklenmeyen hata' });
+        }
+    };
+
+    contextMenu?.addEventListener('click', (event) => {
+        const item = event.target.closest('[data-action]');
+        if (!item) return;
+        const action = item.dataset.action;
+        if (action === 'sms' || action === 'mail') {
+            event.preventDefault();
+            hideContextMenu();
+            sendTemplate(action);
+        }
+    });
 });
 </script>
 @endpush

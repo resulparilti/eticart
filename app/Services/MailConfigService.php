@@ -307,6 +307,24 @@ class MailConfigService
         return rtrim($url, '/');
     }
 
+    /**
+     * Mağaza alanı (ör. orenne.com) — fatura / kargo bildiriminde kullanılır.
+     */
+    public function storeHost(): string
+    {
+        $url = $this->siteUrl();
+        $host = $url !== '' ? parse_url($url, PHP_URL_HOST) : null;
+        if (is_string($host) && $host !== '') {
+            $stripped = preg_replace('/^www\./i', '', $host);
+            $host = is_string($stripped) && $stripped !== '' ? $stripped : $host;
+            if (! str_contains(strtolower($host), 'myshopify.com')) {
+                return $host;
+            }
+        }
+
+        return "O'renne.com";
+    }
+
     public function accountUrl(): string
     {
         $site = $this->siteUrl();

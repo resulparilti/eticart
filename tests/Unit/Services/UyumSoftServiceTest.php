@@ -203,6 +203,66 @@ class UyumSoftServiceTest extends TestCase
         $this->assertSame(11, $normalized['variant_info']['variants'][1]['stock']);
     }
 
+    public function test_normalize_applies_variant_price_list_discount(): void
+    {
+        $normalized = (new UyumSoftService())->normalizeProduct([
+            'itemCode' => '10BRU001',
+            'itemName' => 'Bere',
+            'itemAttributeList' => [
+                ['itemAttributeId' => 270, 'itemAttributeName' => 'BEDEN', 'itemAttributeValue' => 'STD', 'itemAttributeCode' => 'STD'],
+                ['itemAttributeId' => 271, 'itemAttributeName' => 'RENK', 'itemAttributeValue' => 'Siyah', 'itemAttributeCode' => 'SIYAH'],
+                ['itemAttributeId' => 272, 'itemAttributeName' => 'RENK', 'itemAttributeValue' => 'Kırmızı', 'itemAttributeCode' => 'KIRMIZI'],
+            ],
+            'itemBarcodeList' => [
+                [
+                    'barcode' => '8685130000001',
+                    'itemAttribute1Id' => 270,
+                    'itemAttribute2Id' => 271,
+                    'itemAttribute3Id' => 0,
+                    'itemAttributeCode1' => 'STD',
+                    'itemAttributeCode2' => 'SIYAH',
+                ],
+                [
+                    'barcode' => '8685130000018',
+                    'itemAttribute1Id' => 270,
+                    'itemAttribute2Id' => 272,
+                    'itemAttribute3Id' => 0,
+                    'itemAttributeCode1' => 'STD',
+                    'itemAttributeCode2' => 'KIRMIZI',
+                ],
+            ],
+            'itemPriceList' => [
+                [
+                    'itemAttribute1Id' => 270,
+                    'itemAttribute2Id' => 271,
+                    'itemAttribute3Id' => 0,
+                    'unitPriceTra' => 1000,
+                    'disc1Rate' => 20,
+                    'disc2Rate' => 0,
+                    'disc3Rate' => 0,
+                ],
+                [
+                    'itemAttribute1Id' => 270,
+                    'itemAttribute2Id' => 272,
+                    'itemAttribute3Id' => 0,
+                    'unitPriceTra' => 1000,
+                    'disc1Rate' => 0,
+                    'disc2Rate' => 0,
+                    'disc3Rate' => 0,
+                ],
+            ],
+        ]);
+
+        $discounted = $normalized['variant_info']['variants'][0];
+        $fullPrice = $normalized['variant_info']['variants'][1];
+
+        $this->assertSame(800.0, $discounted['price']);
+        $this->assertSame(1000.0, $discounted['compare_at_price']);
+        $this->assertSame(20.0, $discounted['disc1_rate']);
+        $this->assertSame(1000.0, $fullPrice['price']);
+        $this->assertNull($fullPrice['compare_at_price']);
+    }
+
     public function test_cloud_create_sales_order_and_find_invoice(): void
     {
         config([
@@ -229,14 +289,14 @@ class UyumSoftServiceTest extends TestCase
                 'statusCode' => 200,
                 'result' => [
                     'invoicE_M' => [
-                        ['id' => 9, 'docNo' => 'SH1002', 'invoiceNo' => 'EA-1'],
+                        ['id' => 9, 'docNo' => 'SH1002', 'invoiceNo' => 'EA-1', 'gnlNote6' => 'Sipariş Numarası: 1002'],
                     ],
                 ],
             ], 200),
             'tenant.eko.uyumcloud.com/UyumApi/v1/FIN/GetInvoiceMList' => Http::response([
                 'statusCode' => 200,
                 'result' => [
-                    ['id' => 9, 'docNo' => 'SH1002', 'invoiceNo' => 'EA-1'],
+                    ['id' => 9, 'docNo' => 'SH1002', 'invoiceNo' => 'EA-1', 'gnlNote6' => 'Sipariş Numarası: 1002'],
                 ],
             ], 200),
         ]);
@@ -248,5 +308,254 @@ class UyumSoftServiceTest extends TestCase
         $invoice = $service->findInvoiceForOrder('SH1002', '#1002');
         $this->assertNotNull($invoice);
         $this->assertSame('EA-1', $invoice['invoiceNo']);
+    }
+
+    public function test_invoice_document_falls_back_from_empty_pdf_to_xml(): void
+    {
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+        ]);
+
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><Invoice><ID>EA-1</ID></Invoice>';
+
+        Http::fake(function ($request) use ($xml) {
+            if (str_contains($request->url(), 'GNL/UyumLogin')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'access_token' => 'token-abc',
+                        'uyumSecretKey' => 'secret-key',
+                    ],
+                ]);
+            }
+
+            if (str_contains($request->url(), 'FIN/GetInvoiceXml')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => ['xml' => base64_encode($xml)],
+                ]);
+            }
+
+            return Http::response([
+                'statusCode' => 200,
+                'result' => [],
+            ]);
+        });
+
+        $document = (new UyumSoftService())->getInvoiceDocument(9);
+
+        $this->assertNotNull($document);
+        $this->assertSame('xml', $document['extension']);
+        $this->assertSame('application/xml', $document['mime']);
+        $this->assertSame('FIN/GetInvoiceXml', $document['source']);
+        $this->assertSame($xml, $document['content']);
+    }
+
+    public function test_invoice_search_rejects_first_unrelated_result_when_filter_is_ignored(): void
+    {
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'GNL/UyumLogin')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'access_token' => 'token-abc',
+                        'uyumSecretKey' => 'secret-key',
+                    ],
+                ]);
+            }
+
+            return Http::response([
+                'statusCode' => 200,
+                'result' => [[
+                    'id' => '84888',
+                    'docNo' => '544051238',
+                    'sourceMId' => '0',
+                    'note1' => 'İLGİSİZ ALIŞ FATURASI',
+                ]],
+            ]);
+        });
+
+        $invoice = (new UyumSoftService())->findInvoiceForOrder('SH1003', '#1003', '7617');
+
+        $this->assertNull($invoice);
+    }
+
+    public function test_invoice_search_matches_labeled_order_number_from_invoice_details(): void
+    {
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'GNL/UyumLogin')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'access_token' => 'token-abc',
+                        'uyumSecretKey' => 'secret-key',
+                    ],
+                ]);
+            }
+
+            if (str_contains($request->url(), 'FIN/GetInvoiceM') && ! str_contains($request->url(), 'List')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'id' => '84917',
+                        'docNo' => 'ORE2026000000001',
+                        'sourceMId' => '35905',
+                        'entityName' => 'ALI DINIZ',
+                        'amtReceipt' => '2.475,00',
+                        'curTraCode' => 'TRY',
+                        'gnlNote6' => 'Sipariş Numarası: 1003',
+                        'gnlNote5' => 'Toplam Tutar: 2475',
+                    ],
+                ]);
+            }
+
+            return Http::response([
+                'statusCode' => 200,
+                'result' => [
+                    [
+                        'id' => '84888',
+                        'docNo' => '544051238',
+                        'sourceMId' => '0',
+                        'purchaseSales' => 'Alış',
+                        'entityName' => 'ALI DINIZ',
+                        'amtReceipt' => '2.475,00',
+                        'curTraCode' => 'TRY',
+                    ],
+                    [
+                        'id' => '84917',
+                        'docNo' => 'ORE2026000000001',
+                        'sourceMId' => '35905',
+                        'entityName' => 'ALI DINIZ',
+                        'amtReceipt' => '2.475,00',
+                        'curTraCode' => 'TRY',
+                    ],
+                    [
+                        'id' => '84999',
+                        'docNo' => 'ORE2026000000099',
+                        'sourceMId' => '0',
+                        'entityName' => 'ALI DINIZ',
+                        'amtReceipt' => '2.475,00',
+                        'curTraCode' => 'TRY',
+                        'gnlNote6' => 'Sipariş Numarası: 10030',
+                    ],
+                ],
+            ]);
+        });
+
+        $invoice = (new UyumSoftService())->findInvoiceForOrder(
+            'SH1003',
+            '#1003',
+            '7617',
+            [
+                'customer_name' => 'Ali Diniz',
+                'total' => 2475,
+                'currency' => 'TRY',
+            ]
+        );
+
+        $this->assertNotNull($invoice);
+        $this->assertSame('84917', $invoice['id']);
+        $this->assertSame('Sipariş Numarası: 1003', $invoice['gnlNote6']);
+    }
+
+    public function test_invoice_search_does_not_match_customer_amount_without_order_number_note(): void
+    {
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'GNL/UyumLogin')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'access_token' => 'token-abc',
+                        'uyumSecretKey' => 'secret-key',
+                    ],
+                ]);
+            }
+
+            return Http::response([
+                'statusCode' => 200,
+                'result' => [[
+                    'id' => '84917',
+                    'docNo' => 'ORE2026000000001',
+                    'sourceMId' => '35905',
+                    'entityName' => 'ALI DINIZ',
+                    'amtReceipt' => '2.475,00',
+                    'curTraCode' => 'TRY',
+                ]],
+            ]);
+        });
+
+        $invoice = (new UyumSoftService())->findInvoiceForOrder(
+            'SH1003',
+            '#1003',
+            '7617',
+            [
+                'customer_name' => 'Ali Diniz',
+                'total' => 2475,
+                'currency' => 'TRY',
+            ]
+        );
+
+        $this->assertNull($invoice);
+    }
+
+    public function test_invoice_search_rejects_ambiguous_labeled_order_numbers(): void
+    {
+        config([
+            'services.uyumsoft.username' => 'WEBSERVIS',
+            'services.uyumsoft.password' => 'secret',
+            'services.uyumsoft.base_url' => 'https://tenant.eko.uyumcloud.com',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'GNL/UyumLogin')) {
+                return Http::response([
+                    'statusCode' => 200,
+                    'result' => [
+                        'access_token' => 'token-abc',
+                        'uyumSecretKey' => 'secret-key',
+                    ],
+                ]);
+            }
+
+            return Http::response([
+                'statusCode' => 200,
+                'result' => [
+                    [
+                        'id' => '84917',
+                        'docNo' => 'ORE2026000000001',
+                        'gnlNote6' => 'Sipariş Numarası: 1003',
+                    ],
+                    [
+                        'id' => '84918',
+                        'docNo' => 'ORE2026000000002',
+                        'gnlNote6' => 'Sipariş Numarası: 1003',
+                    ],
+                ],
+            ]);
+        });
+
+        $invoice = (new UyumSoftService())->findInvoiceForOrder('SH1003', '#1003');
+
+        $this->assertNull($invoice);
     }
 }

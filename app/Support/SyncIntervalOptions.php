@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use Illuminate\Validation\Rule;
+
 class SyncIntervalOptions
 {
     /**
@@ -79,10 +81,11 @@ class SyncIntervalOptions
         };
     }
 
-    public static function validateRule(string $group): string
+    /**
+     * @return array<int, mixed>
+     */
+    public static function validateRules(string $group): array
     {
-        $values = implode(',', self::allowedValues($group));
-
-        return "required|integer|in:{$values}";
+        return ['required', 'integer', Rule::in(self::allowedValues($group))];
     }
 }

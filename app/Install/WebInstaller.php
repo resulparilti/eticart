@@ -312,7 +312,7 @@ final class WebInstaller
 
     public function cronCommand(): string
     {
-        $cronMin = max(15, (int) config('eticart.schedule_cron_minutes', 15));
+        $cronMin = \App\Support\SyncIntervalOptions::minCronMinutes();
         $php = $this->resolveCronPhpBinary();
         $base = $this->basePath;
         $log = $base.'/storage/logs/cron.log';

@@ -56,7 +56,7 @@ class CustomerController extends Controller
             ],
             'shopifyConfigured' => $this->shopifyService->isConfigured(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Müşteriler'],
             ],
         ]);
@@ -71,7 +71,7 @@ class CustomerController extends Controller
             'orders' => $customer->orders,
             'shopifyConfigured' => $this->shopifyService->isConfigured(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Müşteriler', 'url' => route('customers.index')],
                 ['label' => $customer->displayName()],
             ],

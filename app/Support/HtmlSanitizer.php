@@ -20,7 +20,7 @@ final class HtmlSanitizer
             return null;
         }
 
-        $clean = strip_tags($trimmed, '<p><br><div><span><b><strong><i><em><u><a><ul><ol><li><font>');
+        $clean = strip_tags($trimmed, '<p><br><div><span><b><strong><i><em><u><a><ul><ol><li><h2><h3><h4><h5><h6><font>');
 
         return $clean !== '' ? $clean : null;
     }

@@ -7,8 +7,10 @@ namespace Tests\Feature;
 use App\Models\Setting;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyOrderItem;
+use App\Models\SyncActivity;
 use App\Models\SyncJob;
 use App\Models\User;
+use App\Services\UyumSoftEInvoiceService;
 use App\Services\UyumSoftOrderSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -63,6 +65,31 @@ class UyumSoftOrderSyncTest extends TestCase
         Http::assertSent(fn ($request): bool => str_contains($request->url(), 'PSM/InsertOrderM'));
     }
 
+    public function test_official_invoice_is_linked_without_storing_a_file(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi(withPdf: false);
+        $this->mock(UyumSoftEInvoiceService::class, function ($mock): void {
+            $mock->shouldReceive('isConfigured')->andReturn(true)->zeroOrMoreTimes();
+            $mock->shouldReceive('hasDedicatedCredentials')->andReturn(true)->zeroOrMoreTimes();
+            $mock->shouldReceive('findOutboxInvoice')->never();
+            $mock->shouldReceive('downloadOfficialDocument')->never();
+            $mock->shouldReceive('downloadByDocumentNumber')->never();
+        });
+
+        $order = $this->makeOrder();
+        $result = app(UyumSoftOrderSyncService::class)->sync(10);
+
+        $this->assertSame(1, $result['invoices']);
+        $order->refresh();
+        $this->assertSame('INV-1', $order->uyumsoft_invoice_no);
+        $this->assertSame('6720a6b7-613f-4104-b283-642a46508454', $order->uyumsoft_einvoice_uuid);
+        $this->assertNull($order->invoice_path);
+        $this->assertTrue($order->hasInvoice());
+        $this->assertFalse($order->hasLocalInvoiceFile());
+        Storage::disk('public')->assertDirectoryEmpty('order-invoices');
+    }
+
     public function test_existing_uyumsoft_order_is_not_created_again(): void
     {
         Storage::fake('public');
@@ -107,11 +134,22 @@ class UyumSoftOrderSyncTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('orders.uyumsoft-sync', $order))
-            ->assertRedirect(route('orders.show', $order));
+            ->assertRedirect(route('orders.show', $order))
+            ->assertSessionHas('success');
 
         $order->refresh();
         $this->assertNotNull($order->uyumsoft_order_id);
         $this->assertNotNull($order->invoice_path);
+
+        $activity = SyncActivity::query()
+            ->where('type', 'uyumsoft_order_sync')
+            ->where('title', $order->order_number.' UyumSoft gönder / fatura çek')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($activity);
+        $this->assertContains($activity->status, [SyncActivity::STATUS_COMPLETED, SyncActivity::STATUS_PARTIAL]);
+        $this->assertTrue($activity->logs()->exists());
     }
 
     public function test_cron_skips_uyumsoft_job_until_interval_elapsed(): void
@@ -223,9 +261,9 @@ class UyumSoftOrderSyncTest extends TestCase
         return $order->fresh(['items']) ?? $order;
     }
 
-    private function fakeCloudApi(): void
+    private function fakeCloudApi(bool $withPdf = true): void
     {
-        Http::fake(function ($request) {
+        Http::fake(function ($request) use ($withPdf) {
             $url = $request->url();
 
             if (str_contains($url, 'GNL/UyumLogin')) {
@@ -239,6 +277,9 @@ class UyumSoftOrderSyncTest extends TestCase
             }
 
             if (str_contains($url, 'GetInvoicePdf') || str_contains($url, 'GetInvoiceMPdf') || str_contains($url, 'GetDocumentPdf')) {
+                if (! $withPdf) {
+                    return Http::response('<html>File or directory not found</html>', 404);
+                }
                 return Http::response([
                     'statusCode' => 200,
                     'result' => [
@@ -248,16 +289,21 @@ class UyumSoftOrderSyncTest extends TestCase
             }
 
             if (str_contains($url, 'GetInvoice')) {
+                $invoice = [
+                    'id' => 555,
+                    'docNo' => 'SH1002',
+                    'invoiceNo' => 'INV-1',
+                    'note1' => 'Shopify #1002',
+                    'gnlNote6' => 'Sipariş Numarası: 1002',
+                ];
+                if (! $withPdf) {
+                    $invoice['guID'] = '6720a6b7-613f-4104-b283-642a46508454';
+                    $invoice['eDocNo'] = 'ORE2026000000001';
+                }
+
                 return Http::response([
                     'statusCode' => 200,
-                    'result' => [
-                        [
-                            'id' => 555,
-                            'docNo' => 'SH1002',
-                            'invoiceNo' => 'INV-1',
-                            'note1' => 'Shopify #1002',
-                        ],
-                    ],
+                    'result' => [$invoice],
                 ], 200);
             }
 

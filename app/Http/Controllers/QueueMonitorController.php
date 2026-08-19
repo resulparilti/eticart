@@ -66,8 +66,9 @@ class QueueMonitorController extends Controller
             'recentJobs' => $recentJobs,
             'failedJobs' => $failedJobs,
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
-                ['label' => 'Queue Durumu'],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
+                ['label' => 'Ayarlar', 'url' => route('settings.index')],
+                ['label' => 'Kuyruk (Queue)'],
             ],
         ]);
     }

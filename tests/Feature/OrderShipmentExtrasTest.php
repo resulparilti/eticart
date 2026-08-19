@@ -7,6 +7,7 @@ use App\Models\Shipment;
 use App\Models\ShopifyOrder;
 use App\Models\User;
 use App\Services\CargoService;
+use App\Services\UyumSoftEInvoiceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -284,10 +285,46 @@ XML, 200),
             ->assertOk()
             ->assertSee($order->invoiceUrl(), false)
             ->assertSee('fatura.pdf')
-            ->assertSee('Henüz gönderilmedi');
+            ->assertSee('henüz bildirim gönderilmedi');
 
         $this->get(route('invoices.public', $order->invoice_token))->assertOk();
         $this->get('/f/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')->assertNotFound();
+    }
+
+    public function test_portal_invoice_link_streams_without_local_file(): void
+    {
+        $this->mock(UyumSoftEInvoiceService::class, function ($mock): void {
+            $mock->shouldReceive('downloadOfficialDocument')
+                ->once()
+                ->with('6720a6b7-613f-4104-b283-642a46508454')
+                ->andReturn([
+                    'content' => '%PDF-1.4 portal-invoice',
+                    'extension' => 'pdf',
+                    'mime' => 'application/pdf',
+                    'source' => 'Integration/GetOutboxInvoicePdf',
+                    'uuid' => '6720a6b7-613f-4104-b283-642a46508454',
+                ]);
+        });
+
+        $order = $this->order([
+            'invoice_token' => str_repeat('ab', 24),
+            'uyumsoft_einvoice_uuid' => '6720a6b7-613f-4104-b283-642a46508454',
+            'invoice_original_name' => 'UyumSoft-ORE2026000000001.pdf',
+            'invoice_uploaded_at' => now(),
+        ]);
+
+        $this->assertTrue($order->hasInvoice());
+        $this->assertFalse($order->hasLocalInvoiceFile());
+        $this->assertNotNull($order->invoiceUrl());
+
+        $this->get(route('invoices.public', $order->invoice_token))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf')
+            ->assertSee('%PDF-1.4 portal-invoice', false);
+
+        $this->get(route('invoices.public', $order->invoice_token))
+            ->assertOk()
+            ->assertSee('%PDF-1.4 portal-invoice', false);
     }
 
     public function test_shipment_invoice_mail_requires_cargo_and_invoice(): void
@@ -346,7 +383,118 @@ XML, 200),
             ->get(route('orders.show', $order))
             ->assertOk()
             ->assertSee('SMTP teslim')
-            ->assertSee('Tekrar gönder');
+            ->assertSee('Tek maili tekrar gönder')
+            ->assertSee('Müşteri bildirimi')
+            ->assertDontSee('Fatura bilgilendirme maili gönder');
+    }
+
+    public function test_invoice_notice_mail_requires_invoice(): void
+    {
+        $user = $this->user();
+        $order = $this->order();
+
+        $this->actingAs($user)
+            ->post(route('orders.send-invoice-mail', $order))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+    }
+
+    public function test_invoice_notice_mail_is_sent_and_logged(): void
+    {
+        Mail::fake();
+
+        $user = $this->user();
+        $order = $this->order([
+            'customer_name' => 'Ayşe Yılmaz',
+            'invoice_token' => str_repeat('cd', 24),
+            'uyumsoft_einvoice_uuid' => '6720a6b7-613f-4104-b283-642a46508454',
+            'invoice_original_name' => 'UyumSoft-ORE.pdf',
+            'invoice_uploaded_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('orders.send-invoice-mail', $order))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        Mail::assertSent(\App\Mail\InvoiceNoticeMail::class, function ($mail) use ($order): bool {
+            $order->refresh();
+            $html = $mail->render();
+
+            return (string) ($mail->payload['invoice_url'] ?? '') === (string) $order->invoiceUrl()
+                && str_contains($html, 'Sayın')
+                && str_contains($html, (string) $order->order_number)
+                && str_contains($html, 'Bizi tercih ettiğiniz için teşekkür ederiz')
+                && str_contains($html, (string) $order->invoiceUrl());
+        });
+
+        $this->assertDatabaseHas('message_notifications', [
+            'notifiable_id' => $order->id,
+            'body' => 'invoice-notice',
+            'status' => 'sent',
+            'recipient' => 'ali@example.com',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', $order))
+            ->assertOk()
+            ->assertSee('Fatura bildirimi')
+            ->assertSee('SMTP teslim');
+    }
+
+    public function test_cargo_notice_mail_requires_shipped_order(): void
+    {
+        $user = $this->user();
+        $order = $this->order(['fulfillment_status' => 'unfulfilled']);
+
+        $this->actingAs($user)
+            ->post(route('orders.send-cargo-mail', $order))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+    }
+
+    public function test_cargo_notice_mail_is_sent_with_tracking(): void
+    {
+        Mail::fake();
+
+        $user = $this->user();
+        $company = $this->yurticiCompany(false);
+        $order = $this->order(['fulfillment_status' => 'fulfilled']);
+        Shipment::query()->create([
+            'shopify_order_id' => $order->id,
+            'cargo_company_id' => $company->id,
+            'order_number' => $order->order_number,
+            'tracking_number' => 'YKNOTICE1',
+            'tracking_url' => 'https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=YKNOTICE1',
+            'status' => Shipment::STATUS_SHIPPED,
+            'receiver_name' => $order->customer_name,
+            'shipped_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('orders.send-cargo-mail', $order))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        Mail::assertSent(\App\Mail\CargoNoticeMail::class, function ($mail) use ($order): bool {
+            $html = $mail->render();
+
+            return str_contains((string) ($mail->payload['tracking_url'] ?? ''), 'YKNOTICE1')
+                && (string) ($mail->payload['company_name'] ?? '') === 'Yurtiçi Kargo'
+                && str_contains($html, 'YKNOTICE1')
+                && str_contains($html, (string) $order->order_number);
+        });
+
+        $this->assertDatabaseHas('message_notifications', [
+            'notifiable_id' => $order->id,
+            'body' => 'cargo-notice',
+            'status' => 'sent',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', $order))
+            ->assertOk()
+            ->assertSee('Kargo bildirimi');
     }
 
     private function user(): User

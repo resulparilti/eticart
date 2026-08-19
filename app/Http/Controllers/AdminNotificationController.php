@@ -36,7 +36,7 @@ class AdminNotificationController extends Controller
             'types' => AdminNotification::typeLabels(),
             'unreadCount' => $this->notifications->unreadCount(),
             'breadcrumbs' => [
-                ['label' => 'Dashboard', 'url' => route('dashboard')],
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Bildirimler'],
             ],
         ]);
