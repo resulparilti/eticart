@@ -71,7 +71,12 @@
                                     <div class="small eticart-muted">{{ $log->user_email }}</div>
                                 </td>
                                 <td><x-badge type="info">{{ $actions[$log->action] ?? $log->action }}</x-badge></td>
-                                <td>{{ $log->description }}</td>
+                                <td>
+                                    {{ $log->description }}
+                                    @if (is_array($log->properties['checked_labels'] ?? null) && $log->properties['checked_labels'] !== [])
+                                        <div class="small eticart-muted mt-1">{{ implode(' · ', $log->properties['checked_labels']) }}</div>
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>

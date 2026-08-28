@@ -11,6 +11,8 @@
         $suggestedTemplateKey = $suggestedTemplateKey ?? \App\Support\OrderMessageTemplates::suggestedKey($order);
         $canSms = ($smsConfigured ?? false) && filled($order->customer_phone);
         $canMail = filled($order->customer_email);
+        $canManageOrder = \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update');
+        $canPackOrder = \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.prepare');
     @endphp
     @if ($order->uyumsoft_invoice_locked)
         <div class="alert alert-warning" role="alert">
@@ -25,12 +27,14 @@
             <p class="eticart-muted mb-0">Shopify ID: {{ $order->shopify_order_id }}</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            @if ($canManageOrder)
             <form method="POST" action="{{ route('orders.sync-one', $order) }}">
                 @csrf
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-arrow-repeat me-1"></i> Senkronize et
                 </button>
             </form>
+            @endif
             @if ($cargoShipment)
                 <a href="{{ route('orders.print-label', $order) }}" class="btn btn-outline-secondary" target="_blank" rel="noopener">
                     <i class="bi bi-upc-scan me-1"></i> Barkod Yazdır
@@ -65,6 +69,7 @@
         <div class="col-12 col-lg-4">
             <div class="eticart-card p-3 h-100">
                 <h2 class="h5 mb-3">Ödeme & Durum</h2>
+                @if ($canManageOrder)
                 <form method="POST" action="{{ route('orders.update-status', $order) }}">
                     @csrf
                     @method('PATCH')
@@ -92,6 +97,19 @@
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm">Durumu Kaydet</button>
                 </form>
+                @else
+                    <div class="mb-2">
+                        <span class="eticart-muted d-block">Ödeme</span>
+                        <x-status-badge group="payment" :value="$order->payment_status" />
+                    </div>
+                    <div class="mb-2">
+                        <span class="eticart-muted d-block">Sipariş durumu</span>
+                        <x-status-badge group="fulfillment" :value="$order->fulfillment_status" />
+                    </div>
+                    @if (filled($order->notes))
+                        <div class="small">{{ $order->notes }}</div>
+                    @endif
+                @endif
             </div>
         </div>
 
@@ -140,6 +158,7 @@
                 @if ($order->uyumsoft_last_error)
                     <div class="alert alert-warning small mt-3 mb-0">{{ $order->uyumsoft_last_error }}</div>
                 @endif
+                @if ($canManageOrder)
                 <form method="POST" action="{{ route('orders.uyumsoft-sync', $order) }}" class="mt-3"
                       onsubmit="const btn=this.querySelector('button[type=submit]'); btn.disabled=true; btn.querySelector('.btn-text')?.classList.add('d-none'); btn.querySelector('.btn-loading')?.classList.remove('d-none');">
                     @csrf
@@ -149,29 +168,40 @@
                     </button>
                 </form>
                 <div class="form-text mt-1">Sonuç sayfa üstünde görünür; ayrıntılar <a href="{{ route('sync-history.index') }}">İşlem Geçmişi</a>’ne yazılır.</div>
+                @endif
             </div>
         </div>
     </div>
 
-    <div class="eticart-card p-3 mb-3">
-        <h2 class="h5 mb-3">Ürünler</h2>
-        @if ($order->items->isEmpty())
-            <x-empty-state title="Kalem yok" message="Bu siparişte ürün kalemi bulunamadı." icon="bi-box" />
-        @else
-            <x-table :headers="['Ürün', 'Varyant', 'SKU', 'Adet', 'Fiyat']">
-                @foreach ($order->items as $item)
-                    <tr>
-                        <td>{{ $item->product_title }}</td>
-                        <td>{{ $item->variant_title ?: '-' }}</td>
-                        <td>{{ $item->sku ?: '-' }}</td>
-                        <td>{{ $item->quantity }}</td>
-                        <td>₺{{ number_format((float) $item->price, 2) }}</td>
-                    </tr>
-                @endforeach
-            </x-table>
+    <div class="row g-3 mb-3">
+        <div class="{{ $canPackOrder ? 'col-12 col-lg-7' : 'col-12' }}">
+            <div class="eticart-card p-3 h-100">
+                <h2 class="h5 mb-3">Ürünler</h2>
+                @if ($order->items->isEmpty())
+                    <x-empty-state title="Kalem yok" message="Bu siparişte ürün kalemi bulunamadı." icon="bi-box" />
+                @else
+                    <x-table :headers="['Ürün', 'Varyant', 'SKU', 'Adet', 'Fiyat']">
+                        @foreach ($order->items as $item)
+                            <tr>
+                                <td>{{ $item->product_title }}</td>
+                                <td>{{ $item->variant_title ?: '-' }}</td>
+                                <td>{{ $item->sku ?: '-' }}</td>
+                                <td>{{ $item->quantity }}</td>
+                                <td>₺{{ number_format((float) $item->price, 2) }}</td>
+                            </tr>
+                        @endforeach
+                    </x-table>
+                @endif
+            </div>
+        </div>
+        @if ($canPackOrder)
+            <div class="col-12 col-lg-5">
+                @include('orders.partials.packing-panel', ['order' => $order])
+            </div>
         @endif
     </div>
 
+    @if ($canManageOrder)
     <div class="row g-3 mb-3">
         <div class="col-12 col-lg-6">
             <div class="eticart-card p-3 h-100">
@@ -449,6 +479,7 @@
             </div>
         </div>
     </div>
+    @endif
 @endsection
 
 @push('scripts')

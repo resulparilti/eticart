@@ -11,6 +11,7 @@ use App\Http\Controllers\AdminNotificationController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OrderPackingController;
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
@@ -170,6 +171,8 @@ Route::middleware(['auth', 'verified', 'active', 'module'])->group(function () {
     Route::post('/orders/{order}/sync', [OrderController::class, 'syncOne'])->name('orders.sync-one');
     Route::match(['get', 'post'], '/orders/{order}/uyumsoft-sync', [OrderController::class, 'syncUyumsoft'])->name('orders.uyumsoft-sync');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+    Route::patch('/orders/{order}/packing/checklist', [OrderPackingController::class, 'updateChecklist'])->name('orders.packing.checklist');
+    Route::post('/orders/{order}/packing/complete', [OrderPackingController::class, 'complete'])->name('orders.packing.complete');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
     Route::post('/orders/{order}/assign-cargo', [OrderController::class, 'assignCargo'])->name('orders.assign-cargo');
     Route::post('/orders/{order}/invoice', [OrderController::class, 'uploadInvoice'])->name('orders.invoice.upload');

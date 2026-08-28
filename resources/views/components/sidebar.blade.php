@@ -46,6 +46,9 @@
             @php
                 $needed = $item['permission'] ?? null;
                 $canSee = $needed === null || \App\Support\PermissionCatalog::allows(auth()->user(), $needed);
+                if (($item['route'] ?? '') === 'dashboard' && auth()->user()?->isPackingStaff()) {
+                    $canSee = false;
+                }
                 $hasRoute = Route::has($item['route']);
                 $url = $hasRoute ? route($item['route']) : '#';
                 $isActive = $hasRoute && (

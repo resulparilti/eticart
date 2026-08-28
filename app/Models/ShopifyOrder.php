@@ -36,6 +36,13 @@ class ShopifyOrder extends Model
         'fulfillment_status',
         'order_items',
         'notes',
+        'packed_at',
+        'packed_by_user_id',
+        'packed_by_name',
+        'packing_checklist',
+        'packing_gift_box',
+        'packing_gift_box_size',
+        'packing_photo_path',
         'invoice_path',
         'invoice_original_name',
         'invoice_uploaded_at',
@@ -70,6 +77,9 @@ class ShopifyOrder extends Model
         'uyumsoft_pushed_at' => 'datetime',
         'uyumsoft_needs_update' => 'boolean',
         'uyumsoft_invoice_locked' => 'boolean',
+        'packed_at' => 'datetime',
+        'packing_checklist' => 'array',
+        'packing_gift_box' => 'boolean',
     ];
 
     /**
@@ -78,6 +88,37 @@ class ShopifyOrder extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function packedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'packed_by_user_id')->withTrashed();
+    }
+
+    public function isPacked(): bool
+    {
+        return $this->packed_at !== null;
+    }
+
+    public function packingPhotoUrl(): ?string
+    {
+        if (! filled($this->packing_photo_path)) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->packing_photo_path);
+    }
+
+    public function packedTooltip(): ?string
+    {
+        if (! $this->isPacked()) {
+            return null;
+        }
+
+        $who = trim((string) ($this->packed_by_name ?: $this->packedBy?->name ?: 'Personel'));
+        $when = $this->packed_at?->format('d.m.Y H.i') ?? '';
+
+        return trim($who.' - '.$when.' hazırladı');
     }
 
     /**

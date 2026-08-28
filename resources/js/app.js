@@ -899,4 +899,67 @@ window.productMedia = function productMedia(gallery = []) {
 
 Alpine.data('productMedia', window.productMedia);
 
+window.eticartOrderPacking = function eticartOrderPacking(config) {
+    return {
+        giftBox: Boolean(config.giftBox),
+        giftSize: config.giftSize || '',
+        items: { ...(config.items || {}) },
+        labels: config.labels || {},
+        always: config.always || [],
+        giftKeys: config.giftKeys || [],
+        packed: Boolean(config.packed),
+        canPack: Boolean(config.canPack),
+        saveUrl: config.saveUrl,
+        saving: false,
+        visibleKeys() {
+            return this.giftBox ? [...this.always, ...this.giftKeys] : [...this.always];
+        },
+        allDone() {
+            if (this.giftBox && !String(this.giftSize || '').trim()) {
+                return false;
+            }
+            return this.visibleKeys().every((key) => Boolean(this.items[key]));
+        },
+        async toggle(key, checked) {
+            this.items[key] = Boolean(checked);
+            await this.persist(key, checked);
+        },
+        async onGiftToggle() {
+            if (!this.giftBox) {
+                this.giftKeys.forEach((key) => {
+                    this.items[key] = false;
+                });
+            }
+            await this.persist();
+        },
+        async persist(changedKey = null, changedChecked = null) {
+            if (this.packed || !this.canPack || !this.saveUrl) {
+                return;
+            }
+            this.saving = true;
+            try {
+                const payload = {
+                    gift_box: this.giftBox,
+                    gift_box_size: this.giftSize || null,
+                    checklist: this.items,
+                };
+                if (changedKey) {
+                    payload.item = changedKey;
+                    payload.checked = Boolean(changedChecked);
+                }
+                await window.ajaxRequest(this.saveUrl, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload),
+                });
+            } catch (error) {
+                window.showToast?.('Hazırlama listesi kaydedilemedi.', 'danger');
+            } finally {
+                this.saving = false;
+            }
+        },
+    };
+};
+
+Alpine.data('eticartOrderPacking', window.eticartOrderPacking);
+
 Alpine.start();

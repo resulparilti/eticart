@@ -31,9 +31,15 @@ class GlobalSearchController extends Controller
             ]);
         }
 
-        $customers = $this->searchCustomers($q);
-        $orders = $this->searchOrders($q);
-        $products = $this->searchProducts($q);
+        $customers = \App\Support\PermissionCatalog::allows($request->user(), 'customers.view')
+            ? $this->searchCustomers($q)
+            : [];
+        $orders = \App\Support\PermissionCatalog::allows($request->user(), 'orders.view')
+            ? $this->searchOrders($q)
+            : [];
+        $products = \App\Support\PermissionCatalog::allows($request->user(), 'products.view')
+            ? $this->searchProducts($q)
+            : [];
 
         $groups = [];
 

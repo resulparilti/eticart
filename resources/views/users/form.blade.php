@@ -48,10 +48,11 @@
                         <label class="form-label">Rol</label>
                         <select name="role" class="form-select @error('role') is-invalid @enderror" required>
                             @foreach ($roles as $role)
-                                <option value="{{ $role->name }}" @selected(old('role', $selectedRole) === $role->name)>{{ ucfirst($role->name) }}</option>
+                                <option value="{{ $role->name }}" @selected(old('role', $selectedRole) === $role->name)>{{ \App\Support\PermissionCatalog::roleLabel($role->name) }}</option>
                             @endforeach
                         </select>
                         @error('role') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        <div class="form-text">Üretim personeli rolü yalnızca ürün görüntüleme, sipariş görüntüleme ve sipariş hazırlama yetkisi verir.</div>
                     </div>
 
                     <div class="mb-3">

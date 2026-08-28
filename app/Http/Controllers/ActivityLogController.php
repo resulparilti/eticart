@@ -43,7 +43,7 @@ class ActivityLogController extends Controller
         return view('activity-logs.index', [
             'logs' => $query->paginate(40)->withQueryString(),
             'filters' => $request->only(['q', 'action', 'module', 'from', 'to']),
-            'actions' => ['view' => 'Listeleme', 'create' => 'Ekleme', 'update' => 'Düzenleme', 'delete' => 'Silme', 'login' => 'Giriş', 'logout' => 'Çıkış'],
+            'actions' => ['view' => 'Listeleme', 'create' => 'Ekleme', 'update' => 'Düzenleme', 'delete' => 'Silme', 'prepare' => 'Hazırlama', 'login' => 'Giriş', 'logout' => 'Çıkış'],
             'modules' => collect(\App\Support\PermissionCatalog::modules())->mapWithKeys(
                 fn (array $meta, string $key): array => [$key => $meta['label']]
             )->all(),

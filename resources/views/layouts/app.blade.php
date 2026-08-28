@@ -59,7 +59,9 @@
 
     <div id="eticart-toast-container" class="eticart-toast-container"></div>
 
+    @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'sync.view'))
     <x-sync-monitor />
+    @endif
 
     @stack('scripts')
     <script>

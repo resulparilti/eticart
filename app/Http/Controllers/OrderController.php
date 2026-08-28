@@ -51,7 +51,7 @@ class OrderController extends Controller
     public function index(Request $request): View
     {
         $query = ShopifyOrder::query()
-            ->with(['shipments.cargoCompany'])
+            ->with(['shipments.cargoCompany', 'packedBy'])
             ->latest();
 
         if ($request->filled('status')) {
@@ -85,12 +85,20 @@ class OrderController extends Controller
             $query->whereDate('shopify_created_at', '<=', $request->date('date_to'));
         }
 
+        if ($request->has('packed') && $request->input('packed') !== null && $request->input('packed') !== '') {
+            if ((string) $request->input('packed') === '1') {
+                $query->whereNotNull('packed_at');
+            } else {
+                $query->whereNull('packed_at');
+            }
+        }
+
         $orders = $query->paginate(20)->withQueryString();
 
         return view('orders.index', [
             'orders' => $orders,
             'filters' => array_merge(
-                $request->only(['status', 'payment_status', 'customer', 'date_from', 'date_to', 'open']),
+                $request->only(['status', 'payment_status', 'customer', 'date_from', 'date_to', 'open', 'packed']),
                 ['customer' => $customerSearch !== '' ? $customerSearch : ($request->input('customer') ?: '')]
             ),
             'isConfigured' => $this->shopifyService->isConfigured(),
@@ -112,7 +120,7 @@ class OrderController extends Controller
     public function show(ShopifyOrder $order): View
     {
         $order->shipments()->where('status', Shipment::STATUS_CANCELLED)->delete();
-        $order->load(['items', 'shipments.cargoCompany', 'user']);
+        $order->load(['items', 'shipments.cargoCompany', 'user', 'packedBy']);
 
         $mailWaitSeconds = 0;
         try {

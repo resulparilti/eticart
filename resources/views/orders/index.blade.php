@@ -9,6 +9,7 @@
             <p class="eticart-muted mb-0">Shopify siparişlerini görüntüleyin, kargoya gönderin ve barkod yazdırın.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update'))
             <a href="{{ route('orders.archives.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-archive me-1"></i> Silinenler
                 @if (($archiveCount ?? 0) > 0)
@@ -26,6 +27,7 @@
                     <i class="bi bi-arrow-repeat me-1"></i> Senkronize Et
                 </button>
             </form>
+            @endif
         </div>
     </div>
 
@@ -38,7 +40,7 @@
             })
             ->count();
     @endphp
-    @if ($missingCustomer > 0)
+    @if ($missingCustomer > 0 && \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update'))
         <div class="alert alert-warning">
             <strong>{{ $missingCustomer }}</strong> siparişte müşteri bilgisi eksik görünüyor.
             Bu genellikle Shopify <em>Protected Customer Data</em> kısıtından kaynaklanır — uygulama API’si ad/e-posta/telefon/adresi sansürler.
@@ -84,8 +86,16 @@
                 <label class="form-label">Bitiş</label>
                 <input type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="form-control">
             </div>
-            <div class="col-12 col-md-1">
-                <button type="submit" class="btn btn-outline-primary w-100">Filtrele</button>
+            <div class="col-6 col-md-2">
+                <label class="form-label">Hazırlama</label>
+                <select name="packed" class="form-select">
+                    <option value="">Tümü</option>
+                    <option value="1" @selected(($filters['packed'] ?? '') === '1')>Hazırlandı</option>
+                    <option value="0" @selected(($filters['packed'] ?? '') === '0')>Hazırlanmadı</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <button class="btn btn-outline-primary w-100" type="submit">Filtrele</button>
             </div>
         </form>
     </div>
@@ -135,12 +145,14 @@
         </div>
 
         <x-table :headers="['', 'Sipariş #', 'Kargo', 'Müşteri', 'Tutar', 'Ödeme', 'Sipariş durumu', 'Tarih', 'İşlem']">
+            @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update'))
             <tr class="table-light">
                 <td>
                     <input type="checkbox" class="form-check-input" id="ordersSelectAll" title="Tümünü seç">
                 </td>
                 <td colspan="8" class="small eticart-muted">Bu sayfadaki siparişleri seç / kaldır</td>
             </tr>
+            @endif
             @foreach ($orders as $order)
                 @php
                     $cargoShipment = $order->latestCargoShipment();
@@ -149,13 +161,23 @@
                     data-order-number="{{ $order->order_number }}"
                     data-has-email="{{ filled($order->customer_email) ? '1' : '0' }}"
                     data-has-phone="{{ filled($order->customer_phone) ? '1' : '0' }}"
-                    class="order-row">
+                    class="order-row {{ $order->isPacked() ? 'is-packed' : '' }}">
                     <td>
-                        <input type="checkbox"
-                               class="form-check-input order-select-checkbox"
-                               value="{{ $order->id }}"
-                               data-has-cargo="{{ $cargoShipment ? '1' : '0' }}"
-                               data-order-number="{{ $order->order_number }}">
+                        <div class="d-flex align-items-center gap-2">
+                            @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update'))
+                            <input type="checkbox"
+                                   class="form-check-input order-select-checkbox"
+                                   value="{{ $order->id }}"
+                                   data-has-cargo="{{ $cargoShipment ? '1' : '0' }}"
+                                   data-order-number="{{ $order->order_number }}">
+                            @endif
+                            @if ($order->isPacked())
+                                <i class="bi bi-truck order-packed-icon"
+                                   data-bs-toggle="tooltip"
+                                   data-bs-title="{{ $order->packedTooltip() }}"
+                                   title="{{ $order->packedTooltip() }}"></i>
+                            @endif
+                        </div>
                     </td>
                     <td class="fw-semibold">{{ $order->order_number }}</td>
                     <td>
@@ -192,6 +214,7 @@
     @endif
 
     <div id="orderContextMenu" class="eticart-context-menu d-none" role="menu">
+        @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update'))
         <button type="button" class="eticart-context-menu__item" data-action="sms" role="menuitem">
             <i class="bi bi-phone me-2"></i> SMS gönder
         </button>
@@ -199,6 +222,7 @@
             <i class="bi bi-envelope me-2"></i> Mail gönder
         </button>
         <div class="eticart-context-menu__sep"></div>
+        @endif
         <a href="#" class="eticart-context-menu__item" data-action="open" role="menuitem">
             <i class="bi bi-box-arrow-up-right me-2"></i> Siparişi görüntüle
         </a>
@@ -222,6 +246,11 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+        if (window.bootstrap?.Tooltip) {
+            new bootstrap.Tooltip(el);
+        }
+    });
     const selectAll = document.getElementById('ordersSelectAll');
     const checkboxes = () => Array.from(document.querySelectorAll('.order-select-checkbox'));
     const bulkBar = document.getElementById('ordersBulkBar');
@@ -396,8 +425,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const smsBtn = contextMenu.querySelector('[data-action="sms"]');
         const mailBtn = contextMenu.querySelector('[data-action="mail"]');
         const openLink = contextMenu.querySelector('[data-action="open"]');
-        smsBtn.disabled = !smsConfigured || !contextOrder.hasPhone;
-        mailBtn.disabled = !contextOrder.hasEmail;
+        if (smsBtn) smsBtn.disabled = !smsConfigured || !contextOrder.hasPhone;
+        if (mailBtn) mailBtn.disabled = !contextOrder.hasEmail;
         openLink.href = @json(url('/orders')) + '/' + contextOrder.id;
 
         contextMenu.classList.remove('d-none');

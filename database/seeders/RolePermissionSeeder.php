@@ -27,6 +27,7 @@ class RolePermissionSeeder extends Seeder
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $manager = Role::firstOrCreate(['name' => 'manager', 'guard_name' => 'web']);
         $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);
+        $production = Role::firstOrCreate(['name' => 'production', 'guard_name' => 'web']);
 
         $admin->syncPermissions($permissions);
 
@@ -39,7 +40,14 @@ class RolePermissionSeeder extends Seeder
                 }
             }
         }
-        $manager->syncPermissions($managerPerms);
+        $managerPerms[] = 'orders.prepare';
+        $manager->syncPermissions(array_values(array_unique($managerPerms)));
+
+        $production->syncPermissions([
+            'orders.view',
+            'orders.prepare',
+            'products.view',
+        ]);
 
         $viewerPerms = [];
         foreach (['orders', 'products', 'customers', 'shipments', 'invoices', 'alerts', 'reports', 'sync'] as $module) {

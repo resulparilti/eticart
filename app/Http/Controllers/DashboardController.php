@@ -9,6 +9,7 @@ use App\Models\Shipment;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyProduct;
 use App\Models\SyncJob;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -18,8 +19,11 @@ class DashboardController extends Controller
     /**
      * Display the admin dashboard.
      */
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        if ($request->user()?->isPackingStaff()) {
+            return redirect()->route('orders.index', ['open' => 1]);
+        }
         $stats = [
             'orders' => ShopifyOrder::query()->count(),
             'products' => ShopifyProduct::query()->count(),

@@ -52,7 +52,7 @@
                     <td>{{ $user->email }}</td>
                     <td>
                         @forelse ($user->roles as $role)
-                            <x-badge type="info">{{ $role->name }}</x-badge>
+                            <x-badge type="info">{{ \App\Support\PermissionCatalog::roleLabel($role->name) }}</x-badge>
                         @empty
                             <span class="eticart-muted">-</span>
                         @endforelse

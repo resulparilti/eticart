@@ -1476,3 +1476,16 @@ code {
     margin: 0.3rem 0.4rem;
     background: var(--eticart-border);
 }
+
+table.table tbody tr.order-row.is-packed {
+    background-color: rgba(31, 157, 99, 0.12);
+}
+
+[data-bs-theme='dark'] table.table tbody tr.order-row.is-packed {
+    background-color: rgba(31, 157, 99, 0.2);
+}
+
+.order-packed-icon {
+    color: #1f9d63;
+    font-size: 1.05rem;
+}

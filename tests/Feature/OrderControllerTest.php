@@ -35,9 +35,9 @@ class OrderControllerTest extends TestCase
             'synced_at' => now(),
         ]);
 
-        $this->actingAs($user)
-            ->get(route('orders.index'))
-            ->assertOk()
+        $response = $this->actingAs($user)
+            ->get(route('orders.index'));
+        $response->assertOk()
             ->assertSee('#1001');
     }
 

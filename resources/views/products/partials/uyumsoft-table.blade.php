@@ -112,7 +112,9 @@
                     </td>
                     <td class="text-nowrap">
                         <a href="{{ route('products.show', $product) }}" class="btn btn-sm btn-outline-primary">Detay</a>
-                        <a href="{{ route('products.edit', $product) }}" class="btn btn-sm btn-outline-secondary">Düzenle</a>
+                        @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'products.update'))
+                            <a href="{{ route('products.edit', $product) }}" class="btn btn-sm btn-outline-secondary">Düzenle</a>
+                        @endif
                     </td>
                 </tr>
             @endforeach

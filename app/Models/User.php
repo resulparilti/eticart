@@ -67,6 +67,24 @@ class User extends Authenticatable
         return $this->hasMany(ActivityLog::class);
     }
 
+    public function packedOrders(): HasMany
+    {
+        return $this->hasMany(ShopifyOrder::class, 'packed_by_user_id');
+    }
+
+    /**
+     * Üretim personeli: ürün ve sipariş görüntüleme + hazırlama.
+     */
+    public function isPackingStaff(): bool
+    {
+        if ($this->hasRole('admin')) {
+            return false;
+        }
+
+        return $this->hasRole('production')
+            || ($this->can('orders.prepare') && ! $this->can('orders.update'));
+    }
+
     /**
      * Send the password reset notification in Turkish.
      */

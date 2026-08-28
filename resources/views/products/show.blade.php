@@ -28,6 +28,7 @@
             </p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'products.update'))
             <form method="POST" action="{{ route('products.toggle-active', $product) }}">
                 @csrf
                 <button class="btn btn-outline-secondary" type="submit"
@@ -36,6 +37,7 @@
                 </button>
             </form>
             <a href="{{ route('products.edit', $product) }}" class="btn btn-outline-primary">Düzenle</a>
+            @endif
             <a href="{{ route('products.index') }}" class="btn btn-outline-secondary">Geri</a>
         </div>
     </div>

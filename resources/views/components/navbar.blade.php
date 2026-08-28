@@ -72,6 +72,9 @@
             $todoPending = $todoPendingCount ?? 0;
         @endphp
 
+        @php $isPackingStaff = auth()->user()?->isPackingStaff(); @endphp
+
+        @unless ($isPackingStaff)
         <a href="{{ route('todos.index') }}" class="btn btn-sm btn-outline-secondary position-relative" title="Yapılacaklar" aria-label="Yapılacaklar">
             <i class="bi bi-check2-square"></i>
             @if ($todoPending > 0)
@@ -113,6 +116,7 @@
                 </div>
             </div>
         </div>
+        @endunless
 
         <div class="dropdown">
             <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -125,6 +129,7 @@
                         <i class="bi bi-gear me-2"></i> Profil
                     </a>
                 </li>
+                @unless ($isPackingStaff)
                 <li><hr class="dropdown-divider"></li>
                 <li>
                     <a class="dropdown-item" href="{{ route('notes.index') }}">
@@ -141,6 +146,7 @@
                         <i class="bi bi-calendar3 me-2"></i> Takvim
                     </a>
                 </li>
+                @endunless
                 <li><hr class="dropdown-divider"></li>
                 <li>
                     <form method="POST" action="{{ route('logout') }}">

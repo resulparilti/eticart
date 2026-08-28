@@ -13,6 +13,7 @@ final class PermissionCatalog
         'create' => 'Ekleme',
         'update' => 'Düzenleme',
         'delete' => 'Silme',
+        'prepare' => 'Hazırlama',
     ];
 
     /**
@@ -21,7 +22,7 @@ final class PermissionCatalog
     public static function modules(): array
     {
         return [
-            'orders' => ['label' => 'Siparişler', 'actions' => ['view', 'create', 'update', 'delete']],
+            'orders' => ['label' => 'Siparişler', 'actions' => ['view', 'create', 'update', 'delete', 'prepare']],
             'products' => ['label' => 'Ürünler', 'actions' => ['view', 'create', 'update', 'delete']],
             'customers' => ['label' => 'Müşteriler', 'actions' => ['view', 'create', 'update', 'delete']],
             'shipments' => ['label' => 'Kargolar', 'actions' => ['view', 'create', 'update', 'delete']],
@@ -50,6 +51,24 @@ final class PermissionCatalog
         }
 
         return array_values(array_unique($names));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function roleLabels(): array
+    {
+        return [
+            'admin' => 'Yönetici',
+            'manager' => 'Müdür',
+            'viewer' => 'İzleyici',
+            'production' => 'Üretim personeli',
+        ];
+    }
+
+    public static function roleLabel(string $name): string
+    {
+        return self::roleLabels()[$name] ?? ucfirst($name);
     }
 
     public static function allows(?User $user, string $permission): bool
@@ -106,8 +125,8 @@ final class PermissionCatalog
         return [
             'orders.index' => 'orders.view',
             'orders.show' => 'orders.view',
-            'orders.archives.index' => 'orders.view',
-            'orders.archives.show' => 'orders.view',
+            'orders.archives.index' => 'orders.update',
+            'orders.archives.show' => 'orders.update',
             'orders.print-label' => 'orders.view',
             'orders.sync' => 'orders.update',
             'orders.sync-one' => 'orders.update',
@@ -124,6 +143,8 @@ final class PermissionCatalog
             'orders.shipments.cancel' => 'orders.update',
             'orders.bulk-send-cargo' => 'orders.update',
             'orders.bulk-print-labels' => 'orders.view',
+            'orders.packing.checklist' => 'orders.prepare',
+            'orders.packing.complete' => 'orders.prepare',
 
             'products.index' => 'products.view',
             'products.show' => 'products.view',

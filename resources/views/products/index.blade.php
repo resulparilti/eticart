@@ -14,6 +14,7 @@
             @if (! $uyumConfigured)
                 <span class="badge text-bg-warning align-self-center">UyumSoft ayarları eksik</span>
             @endif
+            @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'products.update'))
             <form method="POST" action="{{ route('products.sync') }}" class="d-inline">
                 @csrf
                 <input type="hidden" name="type" value="products">
@@ -21,6 +22,7 @@
                     <i class="bi bi-cloud-download me-1"></i> UyumSoft’tan Çek
                 </button>
             </form>
+            @endif
         </div>
     </div>
 
