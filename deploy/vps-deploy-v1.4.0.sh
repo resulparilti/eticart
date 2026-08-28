@@ -46,7 +46,12 @@ if [ -d "$NEW" ] && [ "$NEW" = "$PREV" ]; then
 fi
 
 rm -rf "$NEW"
-git clone --branch "$VERSION" --depth 1 "$REPO" "$NEW"
+mkdir -p "$NEW"
+if [ -f /root/eticart-v1.4.0.tgz ]; then
+  tar -xzf /root/eticart-v1.4.0.tgz -C "$NEW"
+else
+  git clone --branch "$VERSION" --depth 1 "$REPO" "$NEW"
+fi
 cp "$PREV/.env" "$NEW/.env"
 
 grep -q '^APP_ENV=' "$NEW/.env" || echo 'APP_ENV=production' >> "$NEW/.env"
