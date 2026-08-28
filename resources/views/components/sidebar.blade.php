@@ -1,7 +1,18 @@
 @php
     $counts = $sidebarCounts ?? ['open_orders' => 0, 'pending_shipments' => 0, 'unread_alerts' => 0];
 
-    $menu = [
+    $isPackingStaff = auth()->user()?->isPackingStaff();
+
+    $menu = $isPackingStaff ? [
+        ['route' => 'dashboard', 'label' => 'Anasayfa', 'icon' => 'bi-speedometer2'],
+        [
+            'route' => 'production.orders.index',
+            'label' => 'Hazırlama',
+            'icon' => 'bi-box-seam',
+            'badge' => (int) ($counts['pending_packing'] ?? 0),
+        ],
+        ['route' => 'production.products.index', 'label' => 'Ürünler', 'icon' => 'bi-upc-scan'],
+    ] : [
         ['route' => 'dashboard', 'label' => 'Anasayfa', 'icon' => 'bi-speedometer2'],
         [
             'route' => 'orders.index',
@@ -46,15 +57,13 @@
             @php
                 $needed = $item['permission'] ?? null;
                 $canSee = $needed === null || \App\Support\PermissionCatalog::allows(auth()->user(), $needed);
-                if (($item['route'] ?? '') === 'dashboard' && auth()->user()?->isPackingStaff()) {
-                    $canSee = false;
-                }
                 $hasRoute = Route::has($item['route']);
                 $url = $hasRoute ? route($item['route']) : '#';
                 $isActive = $hasRoute && (
                     request()->routeIs($item['route'])
                     || request()->routeIs(str_replace('.index', '.*', $item['route']))
                     || request()->routeIs($item['route'] . '.*')
+                    || (($item['route'] ?? '') === 'dashboard' && request()->routeIs('production.dashboard'))
                 );
                 $badge = (int) ($item['badge'] ?? 0);
             @endphp

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\ProductImageCacheService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -217,19 +218,29 @@ class UyumSoftProduct extends Model
 
     /**
      * Liste ve kartlarda kullanılacak ana görsel (panel veya Shopify).
+     * Daha önce detayda cache’lenmişse yerel kopyayı döner.
      */
     public function primaryImageUrl(): ?string
     {
-        foreach ($this->imageUrls() as $url) {
-            $url = trim((string) $url);
-            if ($url !== '') {
-                return $url;
+        $url = null;
+        foreach ($this->imageUrls() as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate !== '') {
+                $url = $candidate;
+                break;
             }
         }
 
-        $mirrorRows = $this->shopifyProduct?->imageRows() ?? [];
-        $fallback = trim((string) ($mirrorRows[0]['src'] ?? ''));
+        if ($url === null) {
+            $mirrorRows = $this->shopifyProduct?->imageRows() ?? [];
+            $fallback = trim((string) ($mirrorRows[0]['src'] ?? ''));
+            $url = $fallback !== '' ? $fallback : null;
+        }
 
-        return $fallback !== '' ? $fallback : null;
+        if ($url === null) {
+            return null;
+        }
+
+        return app(ProductImageCacheService::class)->displayUrl($this, $url);
     }
 }

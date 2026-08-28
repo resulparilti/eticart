@@ -788,6 +788,12 @@ window.applyEticartTheme = function applyEticartTheme(theme) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+        if (window.bootstrap?.Tooltip) {
+            new window.bootstrap.Tooltip(el);
+        }
+    });
+
     document.querySelectorAll('[data-eticart-theme-toggle]').forEach((button) => {
         button.addEventListener('click', () => {
             const current = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
@@ -824,6 +830,40 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modal.parentElement !== document.body) {
             document.body.appendChild(modal);
         }
+    });
+
+    document.querySelectorAll('[data-pack-claim-url]').forEach((link) => {
+        link.addEventListener('click', async (event) => {
+            event.preventDefault();
+            const url = link.getAttribute('data-pack-claim-url');
+            const href = link.getAttribute('href');
+            if (!url || !href) {
+                return;
+            }
+            try {
+                const data = await window.ajaxRequest(url, { method: 'POST' });
+                if (data.can_start === false) {
+                    window.showToast?.(
+                        data.message || 'Bu siparişi bir başka personel hazırlamaya başladı, lütfen farklı bir sipariş hazırlayınız.',
+                        'warning'
+                    );
+                    setTimeout(() => window.location.reload(), 900);
+                    return;
+                }
+                window.location.href = href;
+            } catch (error) {
+                if (error?.status === 409) {
+                    window.showToast?.(
+                        (error.payload && error.payload.message)
+                            || 'Bu siparişi bir başka personel hazırlamaya başladı, lütfen farklı bir sipariş hazırlayınız.',
+                        'warning'
+                    );
+                    setTimeout(() => window.location.reload(), 900);
+                    return;
+                }
+                window.showToast?.('Hazırlama kontrolü yapılamadı.', 'danger');
+            }
+        });
     });
 
     document.querySelectorAll('[data-confirm]').forEach((el) => {
@@ -910,7 +950,35 @@ window.eticartOrderPacking = function eticartOrderPacking(config) {
         packed: Boolean(config.packed),
         canPack: Boolean(config.canPack),
         saveUrl: config.saveUrl,
+        statusUrl: config.statusUrl || null,
         saving: false,
+        lockTimer: null,
+        init() {
+            if (this.packed || !this.canPack || !this.statusUrl) {
+                return;
+            }
+            this.lockTimer = window.setInterval(() => {
+                this.checkLock();
+            }, 4000);
+        },
+        async checkLock() {
+            try {
+                const data = await window.ajaxRequest(this.statusUrl);
+                if (data.can_start === false) {
+                    this.canPack = false;
+                    window.showToast?.(
+                        data.message || 'Bu siparişi bir başka personel hazırlamaya başladı, lütfen farklı bir sipariş hazırlayınız.',
+                        'warning'
+                    );
+                    if (this.lockTimer) {
+                        window.clearInterval(this.lockTimer);
+                    }
+                    setTimeout(() => window.location.reload(), 900);
+                }
+            } catch (error) {
+                // Ağ kesintisinde hazırlamayı kesme.
+            }
+        },
         visibleKeys() {
             return this.giftBox ? [...this.always, ...this.giftKeys] : [...this.always];
         },
@@ -952,7 +1020,15 @@ window.eticartOrderPacking = function eticartOrderPacking(config) {
                     body: JSON.stringify(payload),
                 });
             } catch (error) {
-                window.showToast?.('Hazırlama listesi kaydedilemedi.', 'danger');
+                const locked = error?.status === 409;
+                const message = (error?.payload && error.payload.message)
+                    || (locked
+                        ? 'Bu siparişi bir başka personel hazırlamaya başladı, lütfen farklı bir sipariş hazırlayınız.'
+                        : 'Hazırlama listesi kaydedilemedi.');
+                window.showToast?.(message, locked ? 'warning' : 'danger');
+                if (locked) {
+                    setTimeout(() => window.location.reload(), 900);
+                }
             } finally {
                 this.saving = false;
             }
@@ -961,5 +1037,65 @@ window.eticartOrderPacking = function eticartOrderPacking(config) {
 };
 
 Alpine.data('eticartOrderPacking', window.eticartOrderPacking);
+
+window.eticartUserLogs = function eticartUserLogs(config) {
+    return {
+        url: config.url,
+        q: '',
+        from: config.from || '',
+        to: config.to || '',
+        page: 1,
+        loading: false,
+        logs: [],
+        pagination: { current_page: 1, last_page: 1, total: 0, from: null, to: null },
+        lastLoginAt: config.lastLoginAt || null,
+        timer: null,
+        init() {
+            this.fetch();
+        },
+        scheduleFetch() {
+            this.page = 1;
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => this.fetch(), 300);
+        },
+        applyDates() {
+            this.page = 1;
+            this.fetch();
+        },
+        go(page) {
+            const next = Number(page);
+            if (!next || next < 1 || next > this.pagination.last_page || next === this.page) {
+                return;
+            }
+            this.page = next;
+            this.fetch();
+        },
+        async fetch() {
+            if (!this.url) {
+                return;
+            }
+            this.loading = true;
+            try {
+                const params = new URLSearchParams();
+                if (this.q.trim()) params.set('q', this.q.trim());
+                if (this.from) params.set('from', this.from);
+                if (this.to) params.set('to', this.to);
+                params.set('page', String(this.page));
+                const data = await window.ajaxRequest(`${this.url}?${params.toString()}`);
+                this.logs = data.logs || [];
+                this.pagination = data.pagination || this.pagination;
+                if (Object.prototype.hasOwnProperty.call(data, 'last_login_at')) {
+                    this.lastLoginAt = data.last_login_at;
+                }
+            } catch (error) {
+                window.showToast?.('İşlem kayıtları yüklenemedi.', 'danger');
+            } finally {
+                this.loading = false;
+            }
+        },
+    };
+};
+
+Alpine.data('eticartUserLogs', window.eticartUserLogs);
 
 Alpine.start();

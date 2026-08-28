@@ -12,6 +12,7 @@ use App\Jobs\SyncStock;
 use App\Jobs\SyncUyumSoftProducts;
 use App\Models\ShopifyProduct;
 use App\Models\UyumSoftProduct;
+use App\Services\ProductImageCacheService;
 use App\Services\ProductSyncService;
 use App\Services\ShopifyService;
 use App\Services\SyncActivityTracker;
@@ -30,15 +31,20 @@ class ProductController extends Controller
         private readonly UyumSoftService $uyumSoftService,
         private readonly ShopifyService $shopifyService,
         private readonly ProductSyncService $productSyncService,
-        private readonly SyncActivityTracker $activityTracker
+        private readonly SyncActivityTracker $activityTracker,
+        private readonly ProductImageCacheService $imageCache
     ) {
     }
 
     /**
      * Product list (UyumSoft kaynaklı tüm ürünler).
      */
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        if ($request->user()?->isPackingStaff()) {
+            return redirect()->route('production.products.index', $request->only(['q', 'stock']));
+        }
+
         $tab = $request->string('tab', 'all')->toString();
         $search = $request->string('q')->toString();
         $status = $request->string('status')->toString();
@@ -336,15 +342,20 @@ class ProductController extends Controller
     /**
      * Show product detail.
      */
-    public function show(UyumSoftProduct $product): View
+    public function show(UyumSoftProduct $product): View|RedirectResponse
     {
+        if (request()->user()?->isPackingStaff()) {
+            return redirect()->route('production.products.show', $product);
+        }
+
         $product->load('shopifyProduct');
+        $localized = $this->imageCache->localizeUyumSoft($product);
 
         return view('products.show', [
             'product' => $product,
-            'variants' => $product->variantRows(),
+            'variants' => $localized['variants'],
             'attributeGroups' => $product->attributeGroups(),
-            'images' => $product->imageUrls(),
+            'images' => $localized['images'],
             'shopifyMetafields' => $this->formattedMetafields($product->shopifyProduct?->metafields ?? []),
             'shopifyConfigured' => $this->shopifyService->isConfigured(),
             'syncResults' => session('sync_results', []),
@@ -685,14 +696,12 @@ class ProductController extends Controller
     public function showShopifyMirror(ShopifyProduct $shopifyProduct): View
     {
         $shopifyProduct->load('uyumSoftProduct');
+        $localized = $this->imageCache->localizeShopify($shopifyProduct);
 
         return view('products.shopify-show', [
             'product' => $shopifyProduct,
-            'variants' => $shopifyProduct->variantRows(),
-            'images' => array_values(array_filter(array_map(
-                static fn (array $image): string => trim((string) ($image['src'] ?? '')),
-                $shopifyProduct->imageRows()
-            ))),
+            'variants' => $localized['variants'],
+            'images' => $localized['images'],
             'shopifyMetafields' => $this->formattedMetafields($shopifyProduct->metafields ?? []),
             'adminUrl' => $this->shopifyService->adminProductUrl($shopifyProduct->shopify_product_id),
             'breadcrumbs' => [

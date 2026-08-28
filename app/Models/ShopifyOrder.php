@@ -43,6 +43,8 @@ class ShopifyOrder extends Model
         'packing_gift_box',
         'packing_gift_box_size',
         'packing_photo_path',
+        'packing_started_by_user_id',
+        'packing_started_by_name',
         'invoice_path',
         'invoice_original_name',
         'invoice_uploaded_at',
@@ -93,6 +95,50 @@ class ShopifyOrder extends Model
     public function packedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'packed_by_user_id')->withTrashed();
+    }
+
+    public function packingStartedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'packing_started_by_user_id')->withTrashed();
+    }
+
+    public function hasPackingProgress(): bool
+    {
+        if ($this->packing_started_by_user_id) {
+            return true;
+        }
+
+        $checklist = $this->packing_checklist;
+        if (! is_array($checklist)) {
+            return false;
+        }
+
+        foreach ($checklist as $checked) {
+            if ($checked) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function packingStarterName(): string
+    {
+        return trim((string) ($this->packing_started_by_name ?: $this->packingStartedBy?->name ?: 'Başka bir personel'));
+    }
+
+    public function isPackingClaimedByOther(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        $starterId = (int) ($this->packing_started_by_user_id ?? 0);
+        if ($starterId === 0) {
+            return false;
+        }
+
+        return $starterId !== (int) $user->id;
     }
 
     public function isPacked(): bool
@@ -311,6 +357,34 @@ class ShopifyOrder extends Model
                 ->orWhere('fulfillment_status', '')
                 ->orWhereIn('fulfillment_status', \App\Support\StatusLabels::awaitingShipmentStatuses());
         });
+    }
+
+    /**
+     * İptal/iade/teslim dışındaki siparişler (üretim katı).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<ShopifyOrder>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<ShopifyOrder>
+     */
+    public function scopeActiveForPacking($query)
+    {
+        $closed = ['cancelled', 'refunded', 'partially_refunded', 'restocked', 'delivered'];
+
+        return $query->where(function ($builder) use ($closed): void {
+            $builder->whereNull('fulfillment_status')
+                ->orWhere('fulfillment_status', '')
+                ->orWhereNotIn('fulfillment_status', $closed);
+        });
+    }
+
+    /**
+     * Hazırlanması beklenen siparişler: henüz packed_at yok, iptal/teslim değil.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<ShopifyOrder>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<ShopifyOrder>
+     */
+    public function scopeAwaitingPacking($query)
+    {
+        return $query->activeForPacking()->whereNull('packed_at');
     }
 
     /**

@@ -16,19 +16,21 @@ class SidebarMenuService
     }
 
     /**
-     * @return array{open_orders: int, pending_shipments: int, unread_alerts: int}
+     * @return array{open_orders: int, pending_packing: int, pending_shipments: int, unread_alerts: int}
      */
     public function counts(): array
     {
         try {
             return [
                 'open_orders' => ShopifyOrder::query()->openUndelivered()->count(),
+                'pending_packing' => ShopifyOrder::query()->awaitingPacking()->count(),
                 'pending_shipments' => Shipment::query()->awaitingDelivery()->count(),
                 'unread_alerts' => $this->notifications->unreadCount(),
             ];
         } catch (Throwable) {
             return [
                 'open_orders' => 0,
+                'pending_packing' => 0,
                 'pending_shipments' => 0,
                 'unread_alerts' => 0,
             ];

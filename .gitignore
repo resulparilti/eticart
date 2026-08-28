@@ -23,6 +23,7 @@ yarn-error.log
 # cPanel dağıtım paketleri
 /deploy/dist/
 /deploy/*.tar.gz
+/deploy/*.tgz
 /deploy/*.sql
 /deploy/*.sql.gz
 /scripts/ssh_exec.py

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Support\PermissionCatalog;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -110,11 +112,78 @@ class UserController extends Controller
             'permissionModules' => PermissionCatalog::modules(),
             'selectedRole' => $user->roles->first()?->name ?? 'viewer',
             'selectedPermissions' => $user->getAllPermissions()->pluck('name')->all(),
+            'lastLoginAt' => $this->lastLoginAt($user),
             'mode' => 'edit',
             'breadcrumbs' => [
                 ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Kullanıcılar', 'url' => route('users.index')],
                 ['label' => $user->name],
+            ],
+        ]);
+    }
+
+    /**
+     * Ajax: activity logs for the edited user (date + content filters).
+     */
+    public function logs(Request $request, User $user): JsonResponse
+    {
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $query = ActivityLog::query()
+            ->where('user_id', $user->id)
+            ->latest('created_at');
+
+        if (! empty($filters['q'])) {
+            $q = $filters['q'];
+            $query->where(function ($builder) use ($q) {
+                $builder->where('description', 'like', '%'.$q.'%')
+                    ->orWhere('action', 'like', '%'.$q.'%')
+                    ->orWhere('path', 'like', '%'.$q.'%');
+            });
+        }
+
+        if (! empty($filters['from'])) {
+            $query->whereDate('created_at', '>=', $filters['from']);
+        }
+
+        if (! empty($filters['to'])) {
+            $query->whereDate('created_at', '<=', $filters['to']);
+        }
+
+        $logs = $query->paginate(15)->withQueryString();
+        $actions = [
+            'view' => 'Listeleme',
+            'create' => 'Ekleme',
+            'update' => 'Düzenleme',
+            'delete' => 'Silme',
+            'prepare' => 'Hazırlama',
+            'login' => 'Giriş',
+            'logout' => 'Çıkış',
+        ];
+
+        return response()->json([
+            'ok' => true,
+            'last_login_at' => $this->lastLoginAt($user),
+            'logs' => $logs->getCollection()->map(static function (ActivityLog $log) use ($actions): array {
+                return [
+                    'id' => $log->id,
+                    'created_at' => $log->created_at?->format('d.m.Y H:i:s'),
+                    'action' => $log->action,
+                    'action_label' => $actions[$log->action] ?? $log->action,
+                    'description' => $log->description,
+                ];
+            })->values()->all(),
+            'pagination' => [
+                'current_page' => $logs->currentPage(),
+                'last_page' => $logs->lastPage(),
+                'total' => $logs->total(),
+                'from' => $logs->firstItem(),
+                'to' => $logs->lastItem(),
             ],
         ]);
     }
@@ -235,5 +304,16 @@ class UserController extends Controller
             'permissions.*' => ['string', Rule::in(PermissionCatalog::allPermissionNames())],
             'is_active' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function lastLoginAt(User $user): ?string
+    {
+        $login = ActivityLog::query()
+            ->where('user_id', $user->id)
+            ->where('action', 'login')
+            ->latest('created_at')
+            ->first();
+
+        return $login?->created_at?->format('d.m.Y H:i:s');
     }
 }

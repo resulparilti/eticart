@@ -19,7 +19,7 @@
                 @keydown.escape.prevent="close()"
                 @focus="open = q.trim().length >= 3"
                 class="form-control border-start-0"
-                placeholder="Sipariş, ürün, müşteri veya telefon ara... (min. 3)"
+                placeholder="{{ auth()->user()?->isPackingStaff() ? 'Sipariş veya ürün ara... (min. 3)' : 'Sipariş, ürün, müşteri veya telefon ara... (min. 3)' }}"
                 aria-label="Hızlı arama"
                 autocomplete="off"
             >

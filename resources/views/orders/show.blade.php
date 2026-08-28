@@ -12,7 +12,8 @@
         $canSms = ($smsConfigured ?? false) && filled($order->customer_phone);
         $canMail = filled($order->customer_email);
         $canManageOrder = \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.update');
-        $canPackOrder = \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.prepare');
+        $canPackOrder = \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.prepare')
+            && ! auth()->user()?->isPackingStaff();
     @endphp
     @if ($order->uyumsoft_invoice_locked)
         <div class="alert alert-warning" role="alert">

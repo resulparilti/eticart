@@ -122,4 +122,74 @@
             </div>
         @endif
     </div>
+
+    @if ($mode === 'edit')
+        <div class="eticart-card p-3 mt-3"
+             data-logs-url="{{ route('users.logs', $user) }}"
+             x-data="eticartUserLogs({
+                url: $el.dataset.logsUrl,
+                lastLoginAt: @js($lastLoginAt ?? null),
+                from: @js(now()->toDateString()),
+                to: @js(now()->toDateString())
+             })">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+                <div>
+                    <h2 class="h6 mb-1">İşlem kayıtları</h2>
+                    <p class="small eticart-muted mb-0">
+                        Son giriş:
+                        <strong x-text="lastLoginAt || 'Henüz giriş kaydı yok'">{{ $lastLoginAt ?? 'Henüz giriş kaydı yok' }}</strong>
+                    </p>
+                </div>
+                <span class="small eticart-muted" x-show="pagination.total > 0" x-cloak>
+                    <span x-text="pagination.from"></span>–<span x-text="pagination.to"></span>
+                    / <span x-text="pagination.total"></span>
+                </span>
+            </div>
+
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-12 col-md-5">
+                    <label class="form-label">İçerik ara</label>
+                    <input type="search" class="form-control" placeholder="Açıklama veya işlem" x-model="q" @input="scheduleFetch()">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Başlangıç</label>
+                    <input type="date" class="form-control" x-model="from" @change="applyDates()">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">Bitiş</label>
+                    <input type="date" class="form-control" x-model="to" @change="applyDates()">
+                </div>
+            </div>
+
+            <div class="small eticart-muted mb-2" x-show="loading" x-cloak>Yükleniyor…</div>
+
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Tarih</th>
+                            <th>İşlem</th>
+                            <th>Açıklama</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="log in logs" :key="log.id">
+                            <tr>
+                                <td class="text-nowrap" x-text="log.created_at"></td>
+                                <td><span class="badge text-bg-info" x-text="log.action_label"></span></td>
+                                <td x-text="log.description"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small eticart-muted mt-3" x-show="!loading && logs.length === 0" x-cloak>
+                Bu filtrelere uyan kayıt yok.
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-3" x-show="pagination.last_page > 1" x-cloak>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @click="go(page - 1)" :disabled="page <= 1">Önceki</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @click="go(page + 1)" :disabled="page >= pagination.last_page">Sonraki</button>
+            </div>
+        </div>
+    @endif
 @endsection

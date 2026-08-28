@@ -28,7 +28,6 @@ class ActivityLogService
             $request ??= request();
             $user ??= $request->user();
             $who = trim((string) ($user?->name ?: 'Sistem'));
-            $when = now()->format('d.m.Y H:i:s');
             $body = trim($description);
             if ($body === '') {
                 $body = 'işlem yaptı.';
@@ -36,10 +35,7 @@ class ActivityLogService
             if (! str_starts_with(mb_strtolower($body), mb_strtolower($who))) {
                 $body = $who.' '.$body;
             }
-            $body = rtrim($body, " \t.");
-            if (! str_ends_with($body, $when)) {
-                $body .= '. '.$when;
-            }
+            $body = rtrim($body, " \t.").'.';
 
             return ActivityLog::query()->create([
                 'user_id' => $user?->id,

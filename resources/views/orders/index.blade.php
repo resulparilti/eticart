@@ -171,15 +171,14 @@
                                    data-has-cargo="{{ $cargoShipment ? '1' : '0' }}"
                                    data-order-number="{{ $order->order_number }}">
                             @endif
-                            @if ($order->isPacked())
-                                <i class="bi bi-truck order-packed-icon"
-                                   data-bs-toggle="tooltip"
-                                   data-bs-title="{{ $order->packedTooltip() }}"
-                                   title="{{ $order->packedTooltip() }}"></i>
-                            @endif
                         </div>
                     </td>
-                    <td class="fw-semibold">{{ $order->order_number }}</td>
+                    <td class="fw-semibold">
+                        <span class="d-inline-flex align-items-center gap-2">
+                            <x-order-packed-mark :order="$order" />
+                            <span>{{ $order->order_number }}</span>
+                        </span>
+                    </td>
                     <td>
                         <x-cargo-logo :shipment="$cargoShipment" />
                         @if ($cargoShipment?->tracking_number)

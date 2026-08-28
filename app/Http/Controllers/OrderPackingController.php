@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\PackingInProgressException;
 use App\Models\ShopifyOrder;
 use App\Services\OrderPackingService;
 use App\Support\OrderPackingChecklist;
@@ -33,15 +34,19 @@ class OrderPackingController extends Controller
             'checklist.*' => ['boolean'],
         ]);
 
-        $fresh = $this->packing->saveChecklist(
-            $order,
-            $request->user(),
-            $validated['checklist'],
-            (bool) $validated['gift_box'],
-            $validated['gift_box_size'] ?? null,
-            $validated['item'] ?? null,
-            array_key_exists('checked', $validated) ? (bool) $validated['checked'] : null
-        );
+        try {
+            $fresh = $this->packing->saveChecklist(
+                $order,
+                $request->user(),
+                $validated['checklist'],
+                (bool) $validated['gift_box'],
+                $validated['gift_box_size'] ?? null,
+                $validated['item'] ?? null,
+                array_key_exists('checked', $validated) ? (bool) $validated['checked'] : null
+            );
+        } catch (PackingInProgressException $e) {
+            return response()->json(['ok' => false, 'can_start' => false, 'message' => $e->getMessage()], 409);
+        }
 
         $giftBox = (bool) $fresh->packing_gift_box;
 
@@ -52,6 +57,33 @@ class OrderPackingController extends Controller
             'gift_box' => $giftBox,
             'gift_box_size' => $fresh->packing_gift_box_size,
         ]);
+    }
+
+    public function status(Request $request, ShopifyOrder $order): JsonResponse
+    {
+        return response()->json($this->packing->statusFor($order, $request->user()));
+    }
+
+    public function claim(Request $request, ShopifyOrder $order): JsonResponse
+    {
+        $this->guardPackable($order);
+        $user = $request->user();
+        if (! $user) {
+            abort(403);
+        }
+
+        try {
+            $fresh = $this->packing->claim($order, $user);
+        } catch (PackingInProgressException $e) {
+            return response()->json([
+                'ok' => false,
+                'can_start' => false,
+                'started_by' => $order->fresh()?->packingStarterName(),
+                'message' => $e->getMessage(),
+            ], 409);
+        }
+
+        return response()->json($this->packing->statusFor($fresh, $user));
     }
 
     public function complete(Request $request, ShopifyOrder $order): RedirectResponse
@@ -80,11 +112,32 @@ class OrderPackingController extends Controller
                 $validated['gift_box_size'] ?? null,
                 $request->file('photo')
             );
-        } catch (InvalidArgumentException $e) {
+        } catch (PackingInProgressException|InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }
 
+        if ($request->user()?->isPackingStaff()) {
+            return redirect()
+                ->route('production.orders.show', $order)
+                ->with('success', $order->order_number.' hazırlandı olarak işaretlendi.');
+        }
+
         return back()->with('success', $order->order_number.' hazırlandı olarak işaretlendi.');
+    }
+
+    public function reset(Request $request, ShopifyOrder $order): RedirectResponse
+    {
+        if (! $request->user()?->hasRole('admin')) {
+            abort(403, 'Hazırlama kaydını yalnızca yönetici sıfırlayabilir.');
+        }
+
+        if (! $order->isPacked() && ! $order->hasPackingProgress()) {
+            return back()->with('error', 'Bu siparişin sıfırlanacak hazırlama kaydı yok.');
+        }
+
+        $this->packing->reset($order, $request->user());
+
+        return back()->with('success', $order->order_number.' hazırlama kaydı sıfırlandı.');
     }
 
     private function guardPackable(ShopifyOrder $order): void

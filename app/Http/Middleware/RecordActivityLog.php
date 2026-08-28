@@ -83,6 +83,10 @@ class RecordActivityLog
             'logout',
             'orders.packing.checklist',
             'orders.packing.complete',
+            'orders.packing.reset',
+            'orders.packing.status',
+            'orders.packing.claim',
+            'users.logs',
         ];
 
         if (in_array($routeName, $skip, true)) {

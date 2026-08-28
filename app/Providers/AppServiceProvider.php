@@ -74,6 +74,7 @@ class AppServiceProvider extends ServiceProvider
             if (! Auth::check()) {
                 $view->with('sidebarCounts', [
                     'open_orders' => 0,
+                    'pending_packing' => 0,
                     'pending_shipments' => 0,
                     'unread_alerts' => 0,
                 ]);
@@ -86,6 +87,7 @@ class AppServiceProvider extends ServiceProvider
             } catch (\Throwable) {
                 $view->with('sidebarCounts', [
                     'open_orders' => 0,
+                    'pending_packing' => 0,
                     'pending_shipments' => 0,
                     'unread_alerts' => 0,
                 ]);

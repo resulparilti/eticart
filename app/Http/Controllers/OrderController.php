@@ -48,8 +48,12 @@ class OrderController extends Controller
     /**
      * List Shopify orders.
      */
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        if ($request->user()?->isPackingStaff()) {
+            return redirect()->route('production.orders.index');
+        }
+
         $query = ShopifyOrder::query()
             ->with(['shipments.cargoCompany', 'packedBy'])
             ->latest();
@@ -117,8 +121,12 @@ class OrderController extends Controller
     /**
      * Show a single order.
      */
-    public function show(ShopifyOrder $order): View
+    public function show(ShopifyOrder $order): View|RedirectResponse
     {
+        if (request()->user()?->isPackingStaff()) {
+            return redirect()->route('production.orders.show', $order);
+        }
+
         $order->shipments()->where('status', Shipment::STATUS_CANCELLED)->delete();
         $order->load(['items', 'shipments.cargoCompany', 'user', 'packedBy']);
 

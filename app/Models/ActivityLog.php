@@ -66,8 +66,6 @@ class ActivityLog extends Model
 
     public function summary(): string
     {
-        $when = $this->created_at?->format('d.m.Y H:i') ?? '';
-
-        return trim($this->actorLabel().' '.$this->description.($when !== '' ? ' · '.$when : ''));
+        return trim($this->actorLabel().' '.$this->description);
     }
 }

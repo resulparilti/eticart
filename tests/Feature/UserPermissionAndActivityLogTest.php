@@ -118,7 +118,72 @@ class UserPermissionAndActivityLogTest extends TestCase
         $this->assertNotNull($log);
         $this->assertStringContainsString('Mehmet Demir', (string) $log->description);
         $this->assertStringContainsString('işlemini yaptı', (string) $log->description);
-        $this->assertMatchesRegularExpression('/\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/', (string) $log->description);
+        $this->assertDoesNotMatchRegularExpression('/\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/', (string) $log->description);
+    }
+
+    public function test_user_edit_logs_ajax_filters_by_content_and_date(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+
+        $admin = User::factory()->create([
+            'name' => 'Yönetici',
+            'email_verified_at' => now(),
+        ]);
+        $admin->assignRole('admin');
+
+        $target = User::factory()->create([
+            'name' => 'Zeynep Kaya',
+            'email_verified_at' => now(),
+        ]);
+        $target->assignRole('viewer');
+
+        $loginAt = now()->subDay()->startOfSecond();
+        ActivityLog::query()->create([
+            'user_id' => $target->id,
+            'user_name' => $target->name,
+            'user_email' => $target->email,
+            'action' => 'login',
+            'module' => 'users',
+            'description' => 'Zeynep Kaya sisteme giriş yaptı.',
+            'created_at' => $loginAt,
+        ]);
+        ActivityLog::query()->create([
+            'user_id' => $target->id,
+            'user_name' => $target->name,
+            'user_email' => $target->email,
+            'action' => 'update',
+            'module' => 'orders',
+            'description' => 'Zeynep Kaya sipariş hazırlama işlemini yaptı.',
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('users.edit', $target))
+            ->assertOk()
+            ->assertSee('Son giriş')
+            ->assertSee('data-logs-url', false)
+            ->assertSee('/users/'.$target->id.'/logs', false)
+            ->assertSee($loginAt->format('d.m.Y H:i:s'))
+            ->assertSee(now()->toDateString(), false);
+
+        $this->actingAs($admin)
+            ->getJson(route('users.logs', $target))
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('pagination.total', 2)
+            ->assertJsonFragment(['action' => 'login'])
+            ->assertJsonPath('last_login_at', $loginAt->format('d.m.Y H:i:s'));
+
+        $this->actingAs($admin)
+            ->getJson(route('users.logs', ['user' => $target, 'q' => 'hazırlama']))
+            ->assertOk()
+            ->assertJsonPath('pagination.total', 1)
+            ->assertJsonFragment(['action' => 'update']);
+
+        $this->actingAs($admin)
+            ->getJson(route('users.logs', ['user' => $target, 'from' => now()->toDateString()]))
+            ->assertOk()
+            ->assertJsonPath('pagination.total', 1);
     }
 
     public function test_login_writes_activity_log(): void

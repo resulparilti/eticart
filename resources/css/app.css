@@ -1485,7 +1485,31 @@ table.table tbody tr.order-row.is-packed {
     background-color: rgba(31, 157, 99, 0.2);
 }
 
-.order-packed-icon {
+.order-packed-icon,
+.order-packed-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: #1f9d63;
-    font-size: 1.05rem;
+    font-size: 1.2rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.order-packed-mark.is-pending {
+    color: #d9a21a;
+}
+
+.order-packed-mark i {
+    font-size: 1.25rem;
+}
+
+.production-stock-list {
+    max-height: 22rem;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.production-stock-variant {
+    border-color: var(--eticart-border) !important;
 }

@@ -30,7 +30,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $home = $request->user()?->isPackingStaff()
-            ? route('orders.index', ['open' => 1])
+            ? route('dashboard')
             : RouteServiceProvider::HOME;
 
         return redirect()->intended($home);

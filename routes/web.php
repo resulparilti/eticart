@@ -14,6 +14,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderPackingController;
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductionController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QueueMonitorController;
 use App\Http\Controllers\ReportController;
@@ -78,6 +79,11 @@ Route::prefix('shopify')->name('shopify.')->group(function () {
 
 Route::middleware(['auth', 'verified', 'active', 'module'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/uretim', [ProductionController::class, 'dashboard'])->name('production.dashboard');
+    Route::get('/uretim/siparisler', [ProductionController::class, 'orders'])->name('production.orders.index');
+    Route::get('/uretim/siparisler/{order}', [ProductionController::class, 'order'])->name('production.orders.show');
+    Route::get('/uretim/urunler', [ProductionController::class, 'products'])->name('production.products.index');
+    Route::get('/uretim/urunler/{product}', [ProductionController::class, 'product'])->name('production.products.show');
     Route::get('/search', GlobalSearchController::class)->name('search.global');
 
     Route::get('/todos', [UserTodoController::class, 'index'])->name('todos.index');
@@ -110,6 +116,7 @@ Route::middleware(['auth', 'verified', 'active', 'module'])->group(function () {
         Route::get('/create', [UserController::class, 'create'])->name('create');
         Route::post('/', [UserController::class, 'store'])->name('store');
         Route::get('/{user}/edit', [UserController::class, 'edit'])->name('edit');
+        Route::get('/{user}/logs', [UserController::class, 'logs'])->name('logs');
         Route::put('/{user}', [UserController::class, 'update'])->name('update');
         Route::post('/{user}/deactivate', [UserController::class, 'deactivate'])->name('deactivate');
         Route::post('/{user}/activate', [UserController::class, 'activate'])->name('activate');
@@ -172,7 +179,10 @@ Route::middleware(['auth', 'verified', 'active', 'module'])->group(function () {
     Route::match(['get', 'post'], '/orders/{order}/uyumsoft-sync', [OrderController::class, 'syncUyumsoft'])->name('orders.uyumsoft-sync');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::patch('/orders/{order}/packing/checklist', [OrderPackingController::class, 'updateChecklist'])->name('orders.packing.checklist');
+    Route::get('/orders/{order}/packing/status', [OrderPackingController::class, 'status'])->name('orders.packing.status');
+    Route::post('/orders/{order}/packing/claim', [OrderPackingController::class, 'claim'])->name('orders.packing.claim');
     Route::post('/orders/{order}/packing/complete', [OrderPackingController::class, 'complete'])->name('orders.packing.complete');
+    Route::post('/orders/{order}/packing/reset', [OrderPackingController::class, 'reset'])->name('orders.packing.reset');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
     Route::post('/orders/{order}/assign-cargo', [OrderController::class, 'assignCargo'])->name('orders.assign-cargo');
     Route::post('/orders/{order}/invoice', [OrderController::class, 'uploadInvoice'])->name('orders.invoice.upload');

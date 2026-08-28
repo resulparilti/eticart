@@ -31,14 +31,16 @@ class GlobalSearchController extends Controller
             ]);
         }
 
-        $customers = \App\Support\PermissionCatalog::allows($request->user(), 'customers.view')
+        $packing = (bool) $request->user()?->isPackingStaff();
+
+        $customers = (! $packing && \App\Support\PermissionCatalog::allows($request->user(), 'customers.view'))
             ? $this->searchCustomers($q)
             : [];
         $orders = \App\Support\PermissionCatalog::allows($request->user(), 'orders.view')
-            ? $this->searchOrders($q)
+            ? $this->searchOrders($q, $packing)
             : [];
         $products = \App\Support\PermissionCatalog::allows($request->user(), 'products.view')
-            ? $this->searchProducts($q)
+            ? $this->searchProducts($q, $packing)
             : [];
 
         $groups = [];
@@ -112,37 +114,44 @@ class GlobalSearchController extends Controller
     /**
      * @return array<int, array{title: string, subtitle: string|null, url: string}>
      */
-    private function searchOrders(string $q): array
+    private function searchOrders(string $q, bool $packingStaff = false): array
     {
         $digits = preg_replace('/\D+/', '', $q) ?? '';
         $phoneVariants = strlen($digits) >= 7 ? $this->phoneVariants($digits) : [];
         $orderQ = ltrim($q, '#');
 
         return ShopifyOrder::query()
-            ->where(function ($builder) use ($q, $orderQ, $phoneVariants) {
+            ->where(function ($builder) use ($q, $orderQ, $phoneVariants, $packingStaff) {
                 $builder->where('order_number', 'like', "%{$q}%")
-                    ->orWhere('order_number', 'like', "%{$orderQ}%")
-                    ->orWhere('customer_name', 'like', "%{$q}%")
-                    ->orWhere('customer_email', 'like', "%{$q}%")
-                    ->orWhere('customer_phone', 'like', "%{$q}%");
+                    ->orWhere('order_number', 'like', "%{$orderQ}%");
 
-                foreach ($phoneVariants as $variant) {
-                    $builder->orWhere('customer_phone', 'like', "%{$variant}%");
+                if (! $packingStaff) {
+                    $builder->orWhere('customer_name', 'like', "%{$q}%")
+                        ->orWhere('customer_email', 'like', "%{$q}%")
+                        ->orWhere('customer_phone', 'like', "%{$q}%");
+
+                    foreach ($phoneVariants as $variant) {
+                        $builder->orWhere('customer_phone', 'like', "%{$variant}%");
+                    }
                 }
             })
             ->orderByDesc('id')
             ->limit(self::LIMIT)
             ->get()
-            ->map(static function (ShopifyOrder $order): array {
-                $subtitleParts = array_filter([
-                    (string) $order->customer_name,
-                    (string) $order->customer_phone,
-                ]);
+            ->map(static function (ShopifyOrder $order) use ($packingStaff): array {
+                $subtitleParts = $packingStaff
+                    ? array_filter([(string) optional($order->shopify_created_at ?? $order->created_at)->format('d.m.Y')])
+                    : array_filter([
+                        (string) $order->customer_name,
+                        (string) $order->customer_phone,
+                    ]);
 
                 return [
                     'title' => 'Sipariş '.$order->order_number,
                     'subtitle' => $subtitleParts !== [] ? implode(' · ', $subtitleParts) : null,
-                    'url' => route('orders.show', $order),
+                    'url' => $packingStaff
+                        ? route('production.orders.show', $order)
+                        : route('orders.show', $order),
                 ];
             })
             ->all();
@@ -151,7 +160,7 @@ class GlobalSearchController extends Controller
     /**
      * @return array<int, array{title: string, subtitle: string|null, url: string}>
      */
-    private function searchProducts(string $q): array
+    private function searchProducts(string $q, bool $packingStaff = false): array
     {
         return UyumSoftProduct::query()
             ->where(function ($builder) use ($q) {
@@ -163,7 +172,7 @@ class GlobalSearchController extends Controller
             ->orderByDesc('id')
             ->limit(self::LIMIT)
             ->get()
-            ->map(static function (UyumSoftProduct $product): array {
+            ->map(static function (UyumSoftProduct $product) use ($packingStaff): array {
                 $subtitleParts = array_filter([
                     $product->sku ? 'SKU: '.$product->sku : null,
                     $product->barcode ? 'Barkod: '.$product->barcode : null,
@@ -172,7 +181,9 @@ class GlobalSearchController extends Controller
                 return [
                     'title' => (string) ($product->title ?: 'Ürün #'.$product->id),
                     'subtitle' => $subtitleParts !== [] ? implode(' · ', $subtitleParts) : null,
-                    'url' => route('products.show', $product),
+                    'url' => $packingStaff
+                        ? route('production.products.show', $product)
+                        : route('products.show', $product),
                 ];
             })
             ->all();

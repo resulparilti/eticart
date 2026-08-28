@@ -10,8 +10,10 @@
         $initial[$key] = ! empty($checklist[$key]);
     }
     $canPack = \App\Support\PermissionCatalog::allows(auth()->user(), 'orders.prepare')
-        && ! in_array((string) $order->fulfillment_status, ['cancelled', 'refunded'], true);
+        && ! in_array((string) $order->fulfillment_status, ['cancelled', 'refunded'], true)
+        && ! $order->isPackingClaimedByOther(auth()->user());
     $packed = $order->isPacked();
+    $claimedByOther = $order->isPackingClaimedByOther(auth()->user());
 @endphp
 
 <div class="eticart-card p-3 h-100"
@@ -24,7 +26,8 @@
         giftKeys: @js(\App\Support\OrderPackingChecklist::giftKeys()),
         packed: {{ $packed ? 'true' : 'false' }},
         canPack: {{ $canPack ? 'true' : 'false' }},
-        saveUrl: @js(route('orders.packing.checklist', $order))
+        saveUrl: @js(route('orders.packing.checklist', $order)),
+        statusUrl: @js(route('orders.packing.status', $order))
      })">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
         <div>
@@ -33,8 +36,24 @@
         </div>
         @if ($packed)
             <span class="badge text-bg-success">{{ $order->packedTooltip() }}</span>
+        @elseif ($claimedByOther)
+            <span class="badge text-bg-warning">{{ $order->packingStarterName() }} hazırlıyor</span>
         @endif
     </div>
+
+    @if ($claimedByOther)
+        <div class="alert alert-warning py-2">{{ \App\Services\OrderPackingService::LOCKED_MESSAGE }}</div>
+    @endif
+
+    @if (auth()->user()?->hasRole('admin') && ($packed || $order->hasPackingProgress()))
+        <form method="POST" action="{{ route('orders.packing.reset', $order) }}" class="mb-3"
+              data-confirm="Hazırlama kaydı silinsin mi? Yüklenen görsel de kaldırılır.">
+            @csrf
+            <button type="submit" class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Hazırlamayı sıfırla
+            </button>
+        </form>
+    @endif
 
     <div class="form-check form-switch mb-3">
         <input class="form-check-input" type="checkbox" id="packingGiftBox" x-model="giftBox"
