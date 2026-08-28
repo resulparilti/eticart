@@ -149,7 +149,7 @@ class OrderAutomationTest extends TestCase
 
         $fresh = $order->fresh();
         $this->assertSame('preparing', $fresh->fulfillment_status);
-        $this->assertSame('Test Alıcı Ad Soyad', $fresh->customer_name);
+        $this->assertSame('Ali Veli', $fresh->customer_name);
     }
 
     public function test_orders_index_shows_preparing_label(): void

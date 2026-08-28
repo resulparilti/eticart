@@ -11,7 +11,7 @@
         <a href="{{ route('products.show', $product) }}" class="btn btn-outline-secondary">Geri</a>
     </div>
 
-    <div class="eticart-card p-3" style="max-width: 1080px;">
+    <div class="eticart-card p-3" style="max-width: 1180px;">
         <form method="POST" action="{{ route('products.update', $product) }}" enctype="multipart/form-data"
               data-confirm="Değişiklikler kaydedilsin mi? Shopify eşitleme seçiliyse ürün Shopify’a da gönderilecek.">
             @csrf
@@ -39,45 +39,51 @@
                 <textarea id="description" name="description" rows="5" class="form-control">{{ old('description', $product->description) }}</textarea>
             </div>
 
-            <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                    <label for="original_price" class="form-label">Fiyat</label>
-                    <input id="original_price" type="number" step="0.01" min="0" name="original_price" value="{{ old('original_price', $product->original_price) }}" class="form-control" required>
-                </div>
-                <div class="col-md-6">
-                    <label for="stock" class="form-label">Stok (toplam)</label>
-                    <input id="stock" type="number" min="0" name="stock" value="{{ old('stock', $product->stock) }}" class="form-control" required>
-                    <div class="form-text">Varyant stokları UyumSoft depo detayından otomatik gelir; manuel toplam Shopify tek-varyant senaryolarında kullanılır.</div>
-                </div>
-            </div>
-
-            <div class="mb-3">
-                <label for="images_text" class="form-label">Görsel URL’leri (her satıra bir adres)</label>
-                <textarea id="images_text" name="images_text" rows="4" class="form-control" placeholder="https://...">{{ old('images_text', $imagesText) }}</textarea>
-            </div>
-
-            <div class="mb-3">
-                <label for="image_files" class="form-label">Yeni görsel yükle</label>
-                <input id="image_files" type="file" name="image_files[]" class="form-control @error('image_files') is-invalid @enderror @error('image_files.*') is-invalid @enderror" accept="image/*" multiple>
-                @error('image_files') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
-                @error('image_files.*') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
-                <div class="form-text">Ana ürün galerisi. Aşağıdan her varyanta ayrı görsel de yükleyebilirsiniz; Shopify’a ürün açmadan önce burada hazırlanır.</div>
-            </div>
-
             @php
                 $editVariants = is_array($product->variant_info['variants'] ?? null)
                     ? $product->variant_info['variants']
                     : [];
+                $hasEditVariants = $editVariants !== [];
             @endphp
-            @if ($editVariants !== [])
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label for="original_price" class="form-label">Fiyat</label>
+                    <input id="original_price" type="number" step="0.01" min="0" name="original_price"
+                           value="{{ old('original_price', $product->original_price) }}"
+                           class="form-control" required
+                           @if ($hasEditVariants) readonly @endif>
+                    @if ($hasEditVariants)
+                        <div class="form-text">Varyantlı ürünlerde liste fiyatı, kayıttan sonra en düşük varyant fiyatıdır.</div>
+                    @endif
+                </div>
+                <div class="col-md-6">
+                    <label for="stock" class="form-label">Stok (toplam)</label>
+                    <input id="stock" type="number" min="0" name="stock"
+                           value="{{ old('stock', $product->stock) }}"
+                           class="form-control" required
+                           @if ($hasEditVariants) readonly @endif>
+                    <div class="form-text">
+                        @if ($hasEditVariants)
+                            Toplam, aşağıdaki varyant stoklarının toplamıdır.
+                        @else
+                            Varyant yoksa bu değer Shopify tek-varyant stoğu olarak kullanılır.
+                        @endif
+                    </div>
+                </div>
+            </div>
+
+            @if ($hasEditVariants)
                 <div class="mb-3">
-                    <label class="form-label">Varyant görselleri</label>
-                    <p class="form-text mt-0">Her renk/beden için ayrı görsel. Shopify’a eşitlemede ilgili varyanta bağlanır.</p>
+                    <label class="form-label">Varyantlar</label>
+                    <p class="form-text mt-0">Her renk/beden için fiyat, stok ve görsel. Shopify eşitlemesinde ilgili varyanta yazılır.</p>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
                                 <tr>
                                     <th>Varyant</th>
+                                    <th style="width: 7.5rem;">Fiyat</th>
+                                    <th style="width: 6.5rem;">Stok</th>
                                     <th>Görsel</th>
                                     <th>Yeni dosya</th>
                                     <th>veya URL</th>
@@ -89,11 +95,29 @@
                                     @php
                                         $variantImage = is_array($variant) ? ($variant['image'] ?? '') : '';
                                         $variantTitle = is_array($variant) ? ($variant['title'] ?? 'Varyant') : 'Varyant';
+                                        $variantPrice = is_array($variant) ? ($variant['price'] ?? '') : '';
+                                        $variantStock = is_array($variant) ? ($variant['stock'] ?? '') : '';
                                     @endphp
                                     <tr>
                                         <td>
                                             <div class="fw-semibold">{{ $variantTitle }}</div>
                                             <div class="small eticart-muted">{{ $variant['sku'] ?? '' }}</div>
+                                        </td>
+                                        <td>
+                                            <input type="number" step="0.01" min="0"
+                                                   name="variant_prices[{{ $index }}]"
+                                                   value="{{ old('variant_prices.'.$index, $variantPrice) }}"
+                                                   class="form-control form-control-sm @error('variant_prices.'.$index) is-invalid @enderror"
+                                                   required>
+                                            @error('variant_prices.'.$index) <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                        </td>
+                                        <td>
+                                            <input type="number" min="0" step="1"
+                                                   name="variant_stocks[{{ $index }}]"
+                                                   value="{{ old('variant_stocks.'.$index, $variantStock) }}"
+                                                   class="form-control form-control-sm @error('variant_stocks.'.$index) is-invalid @enderror"
+                                                   required>
+                                            @error('variant_stocks.'.$index) <div class="invalid-feedback">{{ $message }}</div> @enderror
                                         </td>
                                         <td style="width: 72px;">
                                             @if ($variantImage)
@@ -122,8 +146,29 @@
                         </table>
                     </div>
                     @error('variant_image_files.*') <div class="invalid-feedback d-block">{{ $message }} </div> @enderror
+                    @error('variant_prices.*') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                    @error('variant_stocks.*') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
                 </div>
             @endif
+
+            <div class="mb-3">
+                <label for="images_text" class="form-label">Görsel URL’leri (her satıra bir adres)</label>
+                <textarea id="images_text" name="images_text" rows="4" class="form-control" placeholder="https://...">{{ old('images_text', $imagesText) }}</textarea>
+            </div>
+
+            <div class="mb-3">
+                <label for="image_files" class="form-label">Yeni görsel yükle</label>
+                <input id="image_files" type="file" name="image_files[]" class="form-control @error('image_files') is-invalid @enderror @error('image_files.*') is-invalid @enderror" accept="image/*" multiple>
+                @error('image_files') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                @error('image_files.*') <div class="invalid-feedback d-block">{{ $message }}</div> @enderror
+                <div class="form-text">
+                    Ana ürün galerisi.
+                    @if ($hasEditVariants)
+                        Varyant görsellerini yukarıdaki tablodan yükleyebilirsiniz.
+                    @endif
+                    Shopify’a ürün açmadan önce burada hazırlanır.
+                </div>
+            </div>
 
             <div class="form-check mb-3">
                 <input class="form-check-input" type="checkbox" name="is_active" value="1" id="is_active" @checked(old('is_active', $product->is_active))>

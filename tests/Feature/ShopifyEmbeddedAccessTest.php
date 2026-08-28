@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ShopifyEmbeddedAccessTest extends TestCase
@@ -39,6 +40,10 @@ class ShopifyEmbeddedAccessTest extends TestCase
 
     public function test_installed_shop_opens_panel_inside_iframe_instead_of_oauth(): void
     {
+        Http::fake([
+            'demo-shop.myshopify.com/*' => Http::response(['shop' => ['name' => 'Demo']], 200),
+        ]);
+
         config([
             'services.shopify.access_token' => 'shpat_test',
             'services.shopify.store_url' => 'demo-shop.myshopify.com',
@@ -47,7 +52,49 @@ class ShopifyEmbeddedAccessTest extends TestCase
         ]);
 
         $this->get('/shopify?shop=demo-shop.myshopify.com')
-            ->assertRedirect('/dashboard');
+            ->assertOk()
+            ->assertSee('zaten bağlı', false);
+    }
+
+    public function test_shopify_handshake_on_root_does_not_go_to_login(): void
+    {
+        Http::fake([
+            'demo-shop.myshopify.com/*' => Http::response(['shop' => ['name' => 'Demo']], 200),
+        ]);
+
+        config([
+            'services.shopify.access_token' => 'shpat_test',
+            'services.shopify.store_url' => 'demo-shop.myshopify.com',
+            'services.shopify.api_key' => 'key',
+            'services.shopify.api_secret' => 'secret',
+        ]);
+
+        $this->get('/?shop=demo-shop.myshopify.com&hmac=test')
+            ->assertOk()
+            ->assertSee('zaten bağlı', false)
+            ->assertDontSee('login', false);
+    }
+
+    public function test_invalid_token_starts_oauth_instead_of_already_connected(): void
+    {
+        Http::fake([
+            'demo-shop.myshopify.com/*' => Http::response(['errors' => 'Invalid API key or access token'], 401),
+        ]);
+
+        config([
+            'services.shopify.access_token' => 'shpat_dead',
+            'services.shopify.store_url' => 'demo-shop.myshopify.com',
+            'services.shopify.api_key' => 'key',
+            'services.shopify.api_secret' => 'secret',
+        ]);
+
+        $response = $this->get('/shopify?shop=demo-shop.myshopify.com');
+
+        $response->assertRedirect();
+        $this->assertStringContainsString(
+            'https://demo-shop.myshopify.com/admin/oauth/authorize',
+            (string) $response->headers->get('Location')
+        );
     }
 
     public function test_admin_app_url_points_to_shopify_embedded_admin(): void

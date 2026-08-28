@@ -9,6 +9,7 @@ use App\Jobs\SyncStock;
 use App\Jobs\SyncUyumSoftOrders;
 use App\Jobs\SyncUyumSoftProducts;
 use App\Jobs\UpdateCargoTracking;
+use App\Models\SyncActivity;
 use App\Models\SyncJob;
 use App\Services\LogRetentionService;
 use Illuminate\Console\Command;
@@ -33,6 +34,15 @@ class CronRun extends Command
 
         Artisan::call('eticart:cron-heartbeat');
         $this->output->write(Artisan::output());
+
+        try {
+            $expired = SyncActivity::expireStale();
+            if ($expired > 0) {
+                $this->logLine("expire-stale {$expired}");
+            }
+        } catch (Throwable $e) {
+            $this->logLine('FAIL expire-stale — '.$e->getMessage());
+        }
 
         $tasks = [
             'order_sync' => fn () => SyncShopifyOrders::dispatchSync(),

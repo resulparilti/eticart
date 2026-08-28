@@ -107,6 +107,56 @@ class UyumSoftOrderSyncTest extends TestCase
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'SaveOrder'));
     }
 
+    public function test_updated_order_content_is_written_to_existing_uyumsoft_order(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi();
+
+        $order = $this->makeOrder([
+            'uyumsoft_order_id' => '98765',
+            'uyumsoft_pushed_at' => now()->subDay(),
+            'total_price' => 199.90,
+        ]);
+        $order->items()->update(['quantity' => 2, 'price' => 99.95]);
+        $order->update([
+            'total_price' => 199.90,
+            'shopify_content_hash' => 'old-hash',
+            'uyumsoft_content_hash' => 'old-hash',
+            'uyumsoft_needs_update' => true,
+        ]);
+
+        $result = app(UyumSoftOrderSyncService::class)->sync(10);
+
+        $this->assertSame(1, $result['pushed']);
+        $order->refresh();
+        $this->assertFalse((bool) $order->uyumsoft_needs_update);
+        $this->assertNotSame('old-hash', $order->uyumsoft_content_hash);
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'UpdateOrder') || str_contains($request->url(), 'SaveOrder'));
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'InsertOrder'));
+    }
+
+    public function test_invoiced_order_content_change_sets_lock_warning(): void
+    {
+        Storage::fake('public');
+        $this->fakeCloudApi();
+
+        $order = $this->makeOrder([
+            'uyumsoft_order_id' => '98765',
+            'uyumsoft_invoice_id' => '555',
+            'invoice_path' => 'order-invoices/1/fatura.pdf',
+            'uyumsoft_needs_update' => true,
+            'shopify_content_hash' => 'new-hash',
+            'uyumsoft_content_hash' => 'old-hash',
+        ]);
+
+        $result = app(UyumSoftOrderSyncService::class)->syncOrder($order->fresh(['items']) ?? $order);
+
+        $this->assertFalse($result['pushed']);
+        $order->refresh();
+        $this->assertTrue((bool) $order->uyumsoft_invoice_locked);
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'UpdateOrder') || str_contains($request->url(), 'SaveOrder') || str_contains($request->url(), 'InsertOrder'));
+    }
+
     public function test_cancelled_order_is_not_pushed(): void
     {
         $this->fakeCloudApi();
@@ -131,6 +181,10 @@ class UyumSoftOrderSyncTest extends TestCase
             ->get(route('orders.show', $order))
             ->assertOk()
             ->assertSee('UyumSoft');
+
+        $this->actingAs($user)
+            ->get(route('orders.uyumsoft-sync', $order))
+            ->assertRedirect(route('orders.show', $order));
 
         $this->actingAs($user)
             ->post(route('orders.uyumsoft-sync', $order))
@@ -257,6 +311,16 @@ class UyumSoftOrderSyncTest extends TestCase
             'quantity' => 1,
             'price' => 199.90,
         ]);
+
+        $order = $order->fresh(['items']) ?? $order;
+        if (filled($order->uyumsoft_order_id) && blank($order->uyumsoft_content_hash)) {
+            $hash = $order->contentHash();
+            $order->update([
+                'shopify_content_hash' => $hash,
+                'uyumsoft_content_hash' => $hash,
+                'uyumsoft_needs_update' => false,
+            ]);
+        }
 
         return $order->fresh(['items']) ?? $order;
     }

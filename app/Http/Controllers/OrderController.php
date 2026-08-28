@@ -12,6 +12,7 @@ use App\Models\CargoCompany;
 use App\Models\Notification;
 use App\Models\Shipment;
 use App\Models\ShopifyOrder;
+use App\Models\ShopifyOrderArchive;
 use App\Services\CargoService;
 use App\Services\MailConfigService;
 use App\Services\MailService;
@@ -97,6 +98,7 @@ class OrderController extends Controller
             'messageTemplates' => OrderMessageTemplates::options(),
             'smsConfigured' => $this->customerMessages->smsConfigured(),
             'mailConfigured' => $this->customerMessages->mailConfigured(),
+            'archiveCount' => ShopifyOrderArchive::query()->count(),
             'breadcrumbs' => [
                 ['label' => 'Anasayfa', 'url' => route('dashboard')],
                 ['label' => 'Siparişler'],
@@ -136,6 +138,47 @@ class OrderController extends Controller
     }
 
     /**
+     * Shopify’dan silinip arşivlenen siparişler.
+     */
+    public function archives(Request $request): View
+    {
+        $query = ShopifyOrderArchive::query()->latest('archived_at');
+
+        if ($request->filled('q')) {
+            $term = $request->string('q')->toString();
+            $query->where(function ($builder) use ($term): void {
+                $builder->where('order_number', 'like', "%{$term}%")
+                    ->orWhere('customer_name', 'like', "%{$term}%")
+                    ->orWhere('customer_email', 'like', "%{$term}%")
+                    ->orWhere('shopify_order_id', 'like', "%{$term}%");
+            });
+        }
+
+        return view('orders.archives', [
+            'archives' => $query->paginate(20)->withQueryString(),
+            'filters' => $request->only(['q']),
+            'breadcrumbs' => [
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
+                ['label' => 'Siparişler', 'url' => route('orders.index')],
+                ['label' => 'Silinen sipariş arşivi'],
+            ],
+        ]);
+    }
+
+    public function showArchive(ShopifyOrderArchive $archive): View
+    {
+        return view('orders.archive-show', [
+            'archive' => $archive,
+            'breadcrumbs' => [
+                ['label' => 'Anasayfa', 'url' => route('dashboard')],
+                ['label' => 'Siparişler', 'url' => route('orders.index')],
+                ['label' => 'Arşiv', 'url' => route('orders.archives.index')],
+                ['label' => $archive->order_number],
+            ],
+        ]);
+    }
+
+    /**
      * Trigger manual Shopify order sync.
      */
     public function sync(Request $request): RedirectResponse
@@ -150,25 +193,11 @@ class OrderController extends Controller
         $status = $validated['status'] ?? 'any';
 
         try {
-            if (! empty($validated['queue'])) {
-                SyncShopifyOrders::dispatch($limit, $status);
+            SyncShopifyOrders::dispatch($limit, $status);
 
-                return redirect()
-                    ->route('orders.index')
-                    ->with('success', 'Sipariş senkronizasyonu kuyruğa alındı.');
-            }
-
-            $result = $this->orderSyncService->sync($limit, $status);
-            $uyumMessage = $this->syncPendingToUyumsoft($limit);
-
-            $redirect = redirect()->route('orders.index');
-            $message = trim($result['message'].($uyumMessage !== '' ? ' '.$uyumMessage : ''));
-
-            if (($result['redacted'] ?? 0) > 0) {
-                return $redirect->with('warning', $message);
-            }
-
-            return $redirect->with('success', $message);
+            return redirect()
+                ->route('orders.index')
+                ->with('success', 'Sipariş senkronizasyonu kuyruğa alındı. Shopify, yerel kayıtlar ve UyumSoft arka planda eşitlenecek.');
         } catch (ShopifyException $e) {
             return redirect()
                 ->route('orders.index')
@@ -189,7 +218,20 @@ class OrderController extends Controller
     {
         try {
             $result = $this->orderSyncService->syncOne($order);
-            $uyum = $this->syncOrderToUyumsoft($order->fresh() ?? $order);
+            if (! empty($result['archived'])) {
+                return redirect()
+                    ->route('orders.archives.index')
+                    ->with('warning', $result['message']);
+            }
+
+            $fresh = ShopifyOrder::query()->find($order->id);
+            if ($fresh === null) {
+                return redirect()
+                    ->route('orders.archives.index')
+                    ->with('warning', $result['message']);
+            }
+
+            $uyum = $this->syncOrderToUyumsoft($fresh);
 
             $redirect = redirect()->route('orders.show', $order);
             $message = trim($result['message'].($uyum !== '' ? ' '.$uyum : ''));
@@ -214,8 +256,12 @@ class OrderController extends Controller
     /**
      * Push a single Shopify order to UyumSoft and pull its invoice if ready.
      */
-    public function syncUyumsoft(ShopifyOrder $order): RedirectResponse
+    public function syncUyumsoft(Request $request, ShopifyOrder $order): RedirectResponse
     {
+        if (! $request->isMethod('POST')) {
+            return redirect()->route('orders.show', $order);
+        }
+
         try {
             $result = $this->uyumSoftOrderSyncService->syncOrder($order);
             $flashKey = ($result['pushed'] || $result['invoice']) ? 'success' : 'info';

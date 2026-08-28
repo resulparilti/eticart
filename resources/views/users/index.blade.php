@@ -8,7 +8,9 @@
             <h1 class="h3 mb-1">Kullanıcılar</h1>
             <p class="eticart-muted mb-0">Rol ve yetki yönetimi.</p>
         </div>
-        <a href="{{ route('users.create') }}" class="btn btn-primary">Yeni Kullanıcı</a>
+        @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'users.create'))
+            <a href="{{ route('users.create') }}" class="btn btn-primary">Yeni Kullanıcı</a>
+        @endif
     </div>
 
     <div class="eticart-card p-3 mb-3">
@@ -62,17 +64,28 @@
                     </td>
                     <td>{{ optional($user->created_at)->format('d.m.Y') }}</td>
                     <td class="text-nowrap">
-                        <a href="{{ route('users.edit', $user) }}" class="btn btn-sm btn-outline-primary">Düzenle</a>
+                        @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'users.update'))
+                            <a href="{{ route('users.edit', $user) }}" class="btn btn-sm btn-outline-primary">Düzenle</a>
+                        @endif
+                        @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'users.update'))
                         @if ($user->is_active)
                             <form method="POST" action="{{ route('users.deactivate', $user) }}" class="d-inline" data-confirm="Kullanıcı pasifleştirilsin mi?">
                                 @csrf
-                                <button class="btn btn-sm btn-outline-danger" type="submit" @disabled($user->id === auth()->id())>Pasifleştir</button>
+                                <button class="btn btn-sm btn-outline-warning" type="submit" @disabled($user->id === auth()->id())>Pasifleştir</button>
                             </form>
                         @else
                             <form method="POST" action="{{ route('users.activate', $user) }}" class="d-inline">
                                 @csrf
                                 <button class="btn btn-sm btn-outline-success" type="submit">Aktifleştir</button>
                             </form>
+                        @endif
+                        @endif
+                        @if (\App\Support\PermissionCatalog::allows(auth()->user(), 'users.delete'))
+                        <form method="POST" action="{{ route('users.destroy', $user) }}" class="d-inline" data-confirm="Kullanıcı silinsin mi? İşlem kayıtları silinmez.">
+                            @csrf
+                            @method('DELETE')
+                            <button class="btn btn-sm btn-outline-danger" type="submit" @disabled($user->id === auth()->id())>Sil</button>
+                        </form>
                         @endif
                     </td>
                 </tr>

@@ -1,11 +1,15 @@
 @extends('email.layout')
 
+@section('heading', 'Sipariş durumu güncellendi')
+
 @section('content')
-    <h1 style="font-size:20px;margin:0 0 16px;">Sipariş Durumu Güncellendi</h1>
-    <p>Merhaba <strong>{{ $customerName }}</strong>,</p>
-    <p><strong>{{ $order->order_number }}</strong> numaralı siparişinizin yeni durumu:</p>
-    <p><strong>{{ $status }}</strong></p>
     @if ($body)
         <x-template-html :content="$body" />
+    @else
+        <p style="margin:0 0 14px;">Merhaba <strong>{{ $customerName }}</strong>,</p>
+        <p style="margin:0;">
+            <strong>{{ $order->order_number }}</strong> numaralı siparişinizin yeni durumu:
+            <strong>{{ $status }}</strong>
+        </p>
     @endif
 @endsection

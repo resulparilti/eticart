@@ -85,11 +85,12 @@ class SidebarMenuAndInvoicesTest extends TestCase
                 'Faturalar',
                 'Bildirimler',
                 'Mesaj bilgilendirmeleri',
-                'İşlem geçmişi',
+                'Kullanıcılar',
+                'İşlem kayıtları',
+                'Senkron geçmişi',
                 'Ayarlar',
                 'Çıkış yap',
             ])
-            ->assertDontSee('Kullanıcılar')
             ->content();
 
         $this->assertStringContainsString('eticart-nav-badge', $html);
@@ -107,6 +108,8 @@ class SidebarMenuAndInvoicesTest extends TestCase
             ['shopify_order_id' => '5005', 'order_number' => '#5005', 'fulfillment_status' => 'fulfilled'],
             ['shopify_order_id' => '5006', 'order_number' => '#5006', 'fulfillment_status' => 'delivered'],
             ['shopify_order_id' => '5007', 'order_number' => '#5007', 'fulfillment_status' => 'cancelled'],
+            ['shopify_order_id' => '5008', 'order_number' => '#5008', 'fulfillment_status' => 'refunded'],
+            ['shopify_order_id' => '5009', 'order_number' => '#5009', 'fulfillment_status' => 'partially_refunded'],
         ];
 
         foreach ($rows as $row) {

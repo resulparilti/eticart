@@ -10,6 +10,7 @@ use App\Models\ShopifyOrder;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -50,6 +51,39 @@ class ShopifyService
     public function isConfigured(): bool
     {
         return $this->storeUrl !== '' && $this->accessToken !== '';
+    }
+
+    /**
+     * Geçersiz (401) token'ı ayarlardan düşürür; bir sonraki OAuth yeni token üretir.
+     */
+    public function invalidateStoredAccessToken(): void
+    {
+        $this->accessToken = '';
+
+        try {
+            Setting::setValue('shopify_access_token', '', 'shopify', 'Shopify Access Token');
+            Cache::forget('eticart.settings');
+        } catch (Throwable) {
+            // Ayar yazılamasa bile bu istekte token kullanılmasın.
+        }
+    }
+
+    /**
+     * Kayıtlı token Shopify tarafından hâlâ kabul ediliyor mu?
+     */
+    public function accessTokenIsValid(): bool
+    {
+        if (! $this->isConfigured()) {
+            return false;
+        }
+
+        try {
+            $this->testConnection();
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -263,6 +297,63 @@ class ShopifyService
     }
 
     /**
+     * Fetch a single order; null when Shopify returns 404 (deleted / missing).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findOrder(string|int $orderId): ?array
+    {
+        try {
+            $order = $this->getOrderDetails($orderId);
+
+            return $order !== [] ? $order : null;
+        } catch (ShopifyException $e) {
+            if ($this->isNotFound($e)) {
+                return null;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * REST Returns API; yetki yoksa veya endpoint yoksa boş dizi.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getOrderReturns(string|int $orderId): array
+    {
+        try {
+            $response = $this->makeRequest('GET', "orders/{$orderId}/returns.json");
+            $returns = $response['returns'] ?? [];
+
+            return is_array($returns) ? $returns : [];
+        } catch (Throwable $e) {
+            if ($this->isNotFound($e) || (int) $e->getCode() === 403) {
+                return [];
+            }
+
+            Log::channel('stack')->warning('Shopify iade listesi alınamadı', [
+                'order_id' => $orderId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    public function isNotFound(\Throwable $e): bool
+    {
+        if ($e instanceof ShopifyException && (int) $e->getCode() === 404) {
+            return true;
+        }
+
+        $status = (int) ($e instanceof ShopifyException ? ($e->context()['status'] ?? 0) : 0);
+
+        return $status === 404 || str_contains($e->getMessage(), '(404)');
+    }
+
+    /**
      * Create a product on Shopify.
      *
      * @param  array<string, mixed>  $data
@@ -302,21 +393,185 @@ class ShopifyService
     }
 
     /**
+     * Create a variant on an existing Shopify product.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public function createProductVariant(string|int $productId, array $data): array
+    {
+        $response = $this->makeRequest('POST', "products/{$productId}/variants.json", ['variant' => $data]);
+
+        return $response['variant'] ?? [];
+    }
+
+    /**
+     * Fetch a single variant (includes inventory_item_id).
+     *
+     * @return array<string, mixed>
+     */
+    public function getProductVariant(string|int $variantId): array
+    {
+        $response = $this->makeRequest('GET', "variants/{$variantId}.json");
+
+        return $response['variant'] ?? [];
+    }
+
+    /**
+     * Mağaza depolarını getir.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getLocations(): array
+    {
+        $response = $this->makeRequest('GET', 'locations.json');
+        $locations = $response['locations'] ?? [];
+
+        return is_array($locations) ? array_values($locations) : [];
+    }
+
+    /**
+     * Kayıtlı location, yoksa Shopify’daki birincil aktif depo,
+     * yoksa verilen inventory item’ın halihazırda bağlı olduğu depo.
+     */
+    public function resolveLocationId(?string $locationId = null, string|int|null $hintInventoryItemId = null): string
+    {
+        $locationId = trim((string) ($locationId ?: Setting::getValue('shopify_location_id', '')));
+        if ($locationId !== '') {
+            return $locationId;
+        }
+
+        $chosen = null;
+        try {
+            foreach ($this->getLocations() as $location) {
+                if (! is_array($location) || empty($location['id'])) {
+                    continue;
+                }
+                if (array_key_exists('active', $location) && ! $location['active']) {
+                    continue;
+                }
+                if ($chosen === null) {
+                    $chosen = $location;
+                }
+                if (! empty($location['primary'])) {
+                    $chosen = $location;
+                    break;
+                }
+            }
+        } catch (ShopifyException $e) {
+            Log::channel('stack')->warning('Shopify locations okunamadı', [
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        if ($chosen === null && $hintInventoryItemId) {
+            foreach ($this->getInventoryLevelsForItem($hintInventoryItemId) as $level) {
+                if (! empty($level['location_id'])) {
+                    $chosen = ['id' => $level['location_id']];
+                    break;
+                }
+            }
+        }
+
+        if ($chosen === null) {
+            throw new ShopifyException('Shopify location ID tanımlı değil ve mağazada aktif depo bulunamadı. Ayarlar → Shopify → Location ID alanını doldurun.');
+        }
+
+        $locationId = (string) $chosen['id'];
+        $this->persistLocationId($locationId);
+
+        return $locationId;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getInventoryLevelsForItem(string|int $inventoryItemId): array
+    {
+        $response = $this->makeRequest('GET', 'inventory_levels.json', null, [
+            'inventory_item_ids' => (string) $inventoryItemId,
+        ]);
+        $levels = $response['inventory_levels'] ?? [];
+
+        return is_array($levels) ? array_values($levels) : [];
+    }
+
+    /**
+     * Inventory item’ı depoya bağla; zaten bağlıysa sessiz geç.
+     */
+    public function connectInventoryToLocation(string|int $inventoryItemId, string $locationId, bool $relocate = false): void
+    {
+        $payload = [
+            'location_id' => (int) ($this->numericShopifyId($locationId) ?: $locationId),
+            'inventory_item_id' => (int) ($this->numericShopifyId($inventoryItemId) ?: $inventoryItemId),
+        ];
+        if ($relocate) {
+            $payload['relocate_if_necessary'] = true;
+        }
+
+        try {
+            $this->makeRequest('POST', 'inventory_levels/connect.json', $payload);
+        } catch (ShopifyException $e) {
+            if ($this->isInventoryAlreadyStocked($e)) {
+                return;
+            }
+            if (! $relocate && $this->isInventoryAtOtherLocation($e)) {
+                $this->connectInventoryToLocation($inventoryItemId, $locationId, true);
+
+                return;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
      * Update inventory level for a variant inventory item.
+     *
+     * Shopify REST’te variant inventory_quantity salt okunur; stok Inventory API ile yazılır.
+     * İlk varyant genelde bir depoya bağlıdır; yeni varyantlar ayrıca connect ister.
      *
      * @return array<string, mixed>
      */
     public function updateInventory(string|int $inventoryItemId, int $quantity, ?string $locationId = null): array
     {
-        $locationId = $locationId ?: (string) Setting::getValue('shopify_location_id', '');
+        $locationId = $this->resolveLocationId($locationId, $inventoryItemId);
 
-        if ($locationId === '') {
-            throw new ShopifyException('Shopify location ID tanımlı değil.');
+        try {
+            $this->makeRequest('PUT', "inventory_items/{$inventoryItemId}.json", [
+                'inventory_item' => [
+                    'id' => (int) ($this->numericShopifyId($inventoryItemId) ?: $inventoryItemId),
+                    'tracked' => true,
+                ],
+            ]);
+        } catch (ShopifyException $e) {
+            Log::channel('stack')->warning('Shopify inventory tracked güncellenemedi', [
+                'inventory_item_id' => $inventoryItemId,
+                'message' => $e->getMessage(),
+            ]);
         }
 
+        try {
+            return $this->setInventoryLevel($inventoryItemId, $locationId, $quantity);
+        } catch (ShopifyException $e) {
+            if (! $this->isInventoryNotStockedAtLocation($e)) {
+                throw $e;
+            }
+        }
+
+        $this->connectInventoryToLocation($inventoryItemId, $locationId);
+
+        return $this->setInventoryLevel($inventoryItemId, $locationId, $quantity);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function setInventoryLevel(string|int $inventoryItemId, string $locationId, int $quantity): array
+    {
         return $this->makeRequest('POST', 'inventory_levels/set.json', [
-            'location_id' => $locationId,
-            'inventory_item_id' => $inventoryItemId,
+            'location_id' => (int) ($this->numericShopifyId($locationId) ?: $locationId),
+            'inventory_item_id' => (int) ($this->numericShopifyId($inventoryItemId) ?: $inventoryItemId),
             'available' => $quantity,
         ]);
     }
@@ -556,7 +811,7 @@ class ShopifyService
     /**
      * Update Shopify order tags / note attributes for EtiCart workflow.
      *
-     * @param  array{status_label?: string, add_tags?: array<int, string>, remove_tags?: array<int, string>, tracking_number?: string, cargo_company?: string, invoice_url?: string|null, note?: string|null}  $workflow
+     * @param  array{status_label?: string, payment_label?: string, add_tags?: array<int, string>, remove_tags?: array<int, string>, tracking_number?: string, cargo_company?: string, invoice_url?: string|null, note?: string|null}  $workflow
      * @return array<string, mixed>
      */
     public function updateOrderWorkflow(string|int $orderId, array $workflow): array
@@ -594,6 +849,9 @@ class ShopifyService
 
         if (! empty($workflow['status_label'])) {
             $noteMap['eticart_status'] = $workflow['status_label'];
+        }
+        if (! empty($workflow['payment_label'])) {
+            $noteMap['eticart_payment'] = $workflow['payment_label'];
         }
         if (! empty($workflow['tracking_number'])) {
             $noteMap['eticart_tracking'] = $workflow['tracking_number'];
@@ -944,6 +1202,69 @@ class ShopifyService
     }
 
     /**
+     * Shopify iade / iade talebi olan siparişlerin REST id eşlemesi.
+     *
+     * @return array<string, array{return_status: string, financial_status: string}>
+     */
+    public function getReturnStatusesByOrderId(): array
+    {
+        $out = [];
+        $cursor = null;
+        $pages = 0;
+
+        try {
+            do {
+                $pages++;
+                $data = $this->graphql(
+                    <<<'GQL'
+                    query OrderReturns($first: Int!, $after: String, $query: String!) {
+                      orders(first: $first, after: $after, query: $query) {
+                        pageInfo { hasNextPage endCursor }
+                        edges {
+                          node {
+                            legacyResourceId
+                            name
+                            returnStatus
+                            displayFinancialStatus
+                          }
+                        }
+                      }
+                    }
+                    GQL,
+                    [
+                        'first' => 50,
+                        'after' => $cursor,
+                        'query' => 'return_status:IN_PROGRESS OR return_status:RETURN_REQUESTED OR return_status:RETURNED OR financial_status:refunded OR financial_status:partially_refunded',
+                    ]
+                );
+
+                $connection = is_array($data['orders'] ?? null) ? $data['orders'] : [];
+                foreach ($connection['edges'] ?? [] as $edge) {
+                    $node = is_array($edge['node'] ?? null) ? $edge['node'] : [];
+                    $id = (string) ($node['legacyResourceId'] ?? '');
+                    if ($id === '') {
+                        continue;
+                    }
+
+                    $out[$id] = [
+                        'return_status' => strtolower((string) ($node['returnStatus'] ?? '')),
+                        'financial_status' => strtolower((string) ($node['displayFinancialStatus'] ?? '')),
+                    ];
+                }
+
+                $hasNext = (bool) ($connection['pageInfo']['hasNextPage'] ?? false);
+                $cursor = $connection['pageInfo']['endCursor'] ?? null;
+            } while ($hasNext && filled($cursor) && $pages < 10);
+        } catch (Throwable $e) {
+            Log::channel('stack')->warning('Shopify iade sorgusu atlandı', [
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        return $out;
+    }
+
+    /**
      * @param  array<string, mixed>  $variables
      * @return array<string, mixed>
      */
@@ -1145,7 +1466,7 @@ class ShopifyService
 
         $url = $this->baseUrl().'/'.ltrim($endpoint, '/');
         $attempts = 0;
-        $maxAttempts = 3;
+        $maxAttempts = 6;
 
         while ($attempts < $maxAttempts) {
             $attempts++;
@@ -1169,14 +1490,15 @@ class ShopifyService
 
                 $this->captureRateLimit($response);
 
-                if ($response->status() === 429) {
-                    $retryAfter = (int) ($response->header('Retry-After') ?: 2);
-                    Log::channel('stack')->warning('Shopify rate limit', [
+                if ($this->shouldRetryStatus($response->status()) && $attempts < $maxAttempts) {
+                    $wait = $this->retryWaitSeconds($response, $attempts);
+                    Log::channel('stack')->warning('Shopify API retry', [
                         'endpoint' => $endpoint,
-                        'retry_after' => $retryAfter,
+                        'status' => $response->status(),
+                        'wait' => $wait,
                         'attempt' => $attempts,
                     ]);
-                    sleep(max($retryAfter, 1));
+                    sleep($wait);
                     continue;
                 }
 
@@ -1215,6 +1537,20 @@ class ShopifyService
         }
 
         throw new ShopifyException('Shopify API isteği başarısız oldu.');
+    }
+
+    private function shouldRetryStatus(int $status): bool
+    {
+        return $status === 409 || $status === 429;
+    }
+
+    private function retryWaitSeconds(Response $response, int $attempt): int
+    {
+        if ($response->status() === 429) {
+            return max((int) ($response->header('Retry-After') ?: 2), 1);
+        }
+
+        return min(16, 2 ** max($attempt - 1, 0));
     }
 
     /**
@@ -1279,19 +1615,22 @@ class ShopifyService
     private function handleErrors(Response $response, string $endpoint): void
     {
         $body = $response->json();
-        $message = is_array($body)
-            ? (string) ($body['errors'] ?? $body['error'] ?? json_encode($body))
-            : (string) $response->body();
-
-        if (is_array($message)) {
-            $message = json_encode($message);
-        }
+        $raw = is_array($body)
+            ? ($body['errors'] ?? $body['error'] ?? $body)
+            : $response->body();
+        $message = is_array($raw)
+            ? (string) json_encode($raw, JSON_UNESCAPED_UNICODE)
+            : (string) $raw;
 
         Log::channel('stack')->error('Shopify API error', [
             'endpoint' => $endpoint,
             'status' => $response->status(),
             'body' => $body,
         ]);
+
+        if ($response->status() === 401) {
+            $this->invalidateStoredAccessToken();
+        }
 
         throw new ShopifyException(
             "Shopify API hatası ({$response->status()}): {$message}",
@@ -1302,5 +1641,42 @@ class ShopifyService
             ],
             $response->status()
         );
+    }
+
+    private function persistLocationId(string $locationId): void
+    {
+        try {
+            Setting::setValue('shopify_location_id', $locationId, 'shopify', 'Shopify Location ID');
+        } catch (Throwable) {
+            // Ayar yazılamasa bile bu istekte bulunan depo kullanılsın.
+        }
+    }
+
+    private function isInventoryAlreadyStocked(ShopifyException $e): bool
+    {
+        $haystack = mb_strtolower($e->getMessage().' '.json_encode($e->context(), JSON_UNESCAPED_UNICODE));
+
+        return str_contains($haystack, 'already stocked')
+            || str_contains($haystack, 'already connected')
+            || str_contains($haystack, 'already been activated');
+    }
+
+    private function isInventoryNotStockedAtLocation(ShopifyException $e): bool
+    {
+        $haystack = mb_strtolower($e->getMessage().' '.json_encode($e->context(), JSON_UNESCAPED_UNICODE));
+
+        return str_contains($haystack, 'not stocked at')
+            || str_contains($haystack, 'not stocked at the location')
+            || str_contains($haystack, 'not found for this item')
+            || str_contains($haystack, 'does not have inventory levels');
+    }
+
+    private function isInventoryAtOtherLocation(ShopifyException $e): bool
+    {
+        $haystack = mb_strtolower($e->getMessage().' '.json_encode($e->context(), JSON_UNESCAPED_UNICODE));
+
+        return str_contains($haystack, 'already stocked at a location')
+            || str_contains($haystack, 'stocked at another location')
+            || str_contains($haystack, 'relocate');
     }
 }

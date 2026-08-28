@@ -21,6 +21,13 @@ class SyncActivity extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const STATUS_CANCELLED = 'cancelled';
+
+    /**
+     * Son güncellemesi bu süreden eski queued/running kayıtlar yarıda kalmış sayılır.
+     */
+    public const STALE_AFTER_MINUTES = 45;
+
     /**
      * @var array<int, string>
      */
@@ -80,6 +87,11 @@ class SyncActivity extends Model
         return $this->dismissed_at !== null;
     }
 
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
+    }
+
     public function dismiss(): void
     {
         if ($this->isActive()) {
@@ -87,6 +99,60 @@ class SyncActivity extends Model
         }
 
         $this->update(['dismissed_at' => now()]);
+    }
+
+    /**
+     * Bekleyen veya takılı kalmış işlemi iptal eder; izleyiciden de düşer.
+     */
+    public function cancel(?string $message = null): bool
+    {
+        if (! $this->isActive()) {
+            return false;
+        }
+
+        $this->update([
+            'status' => self::STATUS_CANCELLED,
+            'message' => $message ?? 'İşlem iptal edildi.',
+            'finished_at' => now(),
+            'dismissed_at' => now(),
+            'meta' => array_merge($this->meta ?? [], [
+                'cancelled' => true,
+                'cancelled_at' => now()->toIso8601String(),
+            ]),
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Job çökünce / timeout olunca takılı kalan izleyici kayıtlarını kapatır.
+     */
+    public static function expireStale(?int $minutes = null): int
+    {
+        $minutes = max(5, $minutes ?? self::STALE_AFTER_MINUTES);
+        $cutoff = now()->subMinutes($minutes);
+
+        $stale = static::query()
+            ->whereIn('status', [self::STATUS_QUEUED, self::STATUS_RUNNING])
+            ->where('updated_at', '<', $cutoff)
+            ->get();
+
+        $count = 0;
+        foreach ($stale as $activity) {
+            if (! $activity->cancel('Yarıda kaldı — işlem yanıt vermeyi durdurdu.')) {
+                continue;
+            }
+
+            SyncActivityLog::query()->create([
+                'sync_activity_id' => $activity->id,
+                'level' => 'warning',
+                'message' => 'Yarıda kaldı — işlem yanıt vermeyi durdurdu.',
+                'created_at' => now(),
+            ]);
+            $count++;
+        }
+
+        return $count;
     }
 
     public function progressPercent(): ?int
@@ -106,6 +172,7 @@ class SyncActivity extends Model
             self::STATUS_COMPLETED => 'Tamam',
             self::STATUS_PARTIAL => 'Kısmi',
             self::STATUS_FAILED => 'Hata',
+            self::STATUS_CANCELLED => 'İptal',
             default => $this->status,
         };
     }
@@ -118,6 +185,7 @@ class SyncActivity extends Model
             self::STATUS_COMPLETED => 'success',
             self::STATUS_PARTIAL => 'warning',
             self::STATUS_FAILED => 'danger',
+            self::STATUS_CANCELLED => 'secondary',
             default => 'secondary',
         };
     }
@@ -143,6 +211,7 @@ class SyncActivity extends Model
             'dismissed_at' => optional($this->dismissed_at)->toIso8601String(),
             'updated_at' => optional($this->updated_at)->toIso8601String(),
             'is_active' => $this->isActive(),
+            'can_cancel' => $this->isActive(),
             'can_dismiss' => ! $this->isActive() && ! $this->isDismissed(),
         ];
 

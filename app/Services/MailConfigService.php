@@ -180,14 +180,14 @@ class MailConfigService
 
         return [
             'name' => $this->brandName(),
-            'header_bg' => $this->color('mail_header_bg', '#0f2a3d'),
+            'header_bg' => $this->color('mail_header_bg', '#000000'),
             'header_text' => $this->color('mail_header_text', '#ffffff'),
             'body_text' => $this->color('mail_text_color', '#142433'),
             'muted_text' => $this->color('mail_muted_color', '#5b6b7c'),
             'link' => $this->color('mail_link_color', '#c45c26'),
-            'button_bg' => $this->color('mail_button_bg', '#0f2a3d'),
+            'button_bg' => $this->color('mail_button_bg', '#000000'),
             'button_text' => $this->color('mail_button_text', '#ffffff'),
-            'logo_path' => null,
+            'logo_path' => $logoPath,
             'logo_url' => $logoUrl,
             'site_url' => $this->siteUrl(),
             'account_url' => $this->accountUrl(),
@@ -263,6 +263,10 @@ class MailConfigService
     private function color(string $key, string $default): string
     {
         $value = trim((string) Setting::getValue($key, $default));
+
+        if (in_array($key, ['mail_header_bg', 'mail_button_bg'], true) && strcasecmp($value, '#0f2a3d') === 0) {
+            $value = $default;
+        }
 
         return preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $value) === 1
             ? $value

@@ -116,12 +116,14 @@ class SettingsController extends Controller
     {
         $oauth = app(\App\Services\ShopifyOAuthService::class);
         $grantedScopes = [];
-        $missingFulfillmentScopes = ShopifyService::FULFILLMENT_SCOPES;
+        $missingFulfillmentScopes = [];
         $scopeError = null;
+        $shopifyConfigured = false;
 
         try {
             $service = new ShopifyService();
-            if ($service->isConfigured()) {
+            $shopifyConfigured = $service->isConfigured();
+            if ($shopifyConfigured) {
                 $grantedScopes = $service->getAccessScopes();
                 $missingFulfillmentScopes = $service->missingFulfillmentScopes($grantedScopes);
             }
@@ -133,6 +135,7 @@ class SettingsController extends Controller
             'settings' => $this->categoryMap('shopify'),
             'oauthUrls' => $oauth->dashboardUrls(),
             'oauthConfigured' => $oauth->isOAuthConfigured(),
+            'shopifyConfigured' => $shopifyConfigured,
             'grantedScopes' => $grantedScopes,
             'missingFulfillmentScopes' => $missingFulfillmentScopes,
             'scopeError' => $scopeError,
@@ -156,6 +159,12 @@ class SettingsController extends Controller
             'shopify_scopes' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        foreach (['shopify_api_secret', 'shopify_access_token'] as $secretKey) {
+            if (! filled($validated[$secretKey] ?? null)) {
+                unset($validated[$secretKey]);
+            }
+        }
+
         $this->saveMany($validated, 'shopify', [
             'shopify_store_url' => 'Shopify Store URL',
             'shopify_access_token' => 'Shopify Access Token',
@@ -168,6 +177,31 @@ class SettingsController extends Controller
         ]);
 
         return back()->with('success', 'Shopify ayarları kaydedildi.');
+    }
+
+    /**
+     * Mağazayı OAuth ile yeniden bağla (geçersiz/eksik token sonrası).
+     */
+    public function reconnectShopify(): RedirectResponse
+    {
+        $shop = (string) Setting::getValue('shopify_store_url');
+        if ($shop === '') {
+            return back()->with('error', 'Önce mağaza adresini (Store URL) kaydedin.');
+        }
+
+        try {
+            $oauth = app(\App\Services\ShopifyOAuthService::class);
+            $stored = array_values(array_filter(array_map('trim', explode(',', (string) Setting::getValue('shopify_scopes')))));
+            $merged = array_values(array_unique(array_merge(
+                array_filter(array_map('trim', explode(',', \App\Services\ShopifyOAuthService::DEFAULT_SCOPES))),
+                $stored
+            )));
+            Setting::setValue('shopify_scopes', implode(',', $merged), 'shopify', 'Shopify OAuth Scopes');
+
+            return redirect()->away($oauth->authorizationUrl($shop));
+        } catch (ShopifyException $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     /**
@@ -623,12 +657,12 @@ class SettingsController extends Controller
         }
 
         $colorDefaults = [
-            'mail_header_bg' => '#0f2a3d',
+            'mail_header_bg' => '#000000',
             'mail_header_text' => '#ffffff',
             'mail_text_color' => '#142433',
             'mail_muted_color' => '#5b6b7c',
             'mail_link_color' => '#c45c26',
-            'mail_button_bg' => '#0f2a3d',
+            'mail_button_bg' => '#000000',
             'mail_button_text' => '#ffffff',
         ];
         foreach ($colorDefaults as $key => $hex) {
@@ -1150,12 +1184,12 @@ class SettingsController extends Controller
             'mail_smtp_password' => ['value' => '', 'label' => 'SMTP Password'],
             'mail_smtp_encryption' => ['value' => in_array(config('mail.mailers.smtp.encryption'), ['tls', 'ssl'], true) ? (string) config('mail.mailers.smtp.encryption') : 'tls', 'label' => 'SMTP Encryption'],
             'mail_brand_name' => ['value' => (string) config('app.name', 'EtiCart'), 'label' => 'Mail Site Adı'],
-            'mail_header_bg' => ['value' => '#0f2a3d', 'label' => 'Mail Başlık Rengi'],
+            'mail_header_bg' => ['value' => '#000000', 'label' => 'Mail Başlık Rengi'],
             'mail_header_text' => ['value' => '#ffffff', 'label' => 'Mail Başlık Yazı Rengi'],
             'mail_text_color' => ['value' => '#142433', 'label' => 'Mail Yazı Rengi'],
             'mail_muted_color' => ['value' => '#5b6b7c', 'label' => 'Mail İkincil Yazı Rengi'],
             'mail_link_color' => ['value' => '#c45c26', 'label' => 'Mail Bağlantı Rengi'],
-            'mail_button_bg' => ['value' => '#0f2a3d', 'label' => 'Mail Buton Rengi'],
+            'mail_button_bg' => ['value' => '#000000', 'label' => 'Mail Buton Rengi'],
             'mail_button_text' => ['value' => '#ffffff', 'label' => 'Mail Buton Yazı Rengi'],
             'mail_logo_path' => ['value' => '', 'label' => 'Mail Logo'],
             'mail_attach_invoice' => ['value' => '0', 'label' => 'Faturayı e-postaya ekle'],

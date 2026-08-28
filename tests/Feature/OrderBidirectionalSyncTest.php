@@ -168,8 +168,9 @@ class OrderBidirectionalSyncTest extends TestCase
 
         $existing->refresh();
         $this->assertSame('fulfilled', $existing->fulfillment_status);
-        $this->assertSame('Lokal İsim', $existing->customer_name);
+        $this->assertSame('Ali Veli', $existing->customer_name);
         $this->assertSame('Lokal not', $existing->notes);
+        $this->assertSame('999.00', (string) $existing->total_price);
         $this->assertFalse((bool) $existing->shopify_needs_push);
         $this->assertNotNull($existing->shopify_pushed_at);
 
@@ -183,6 +184,250 @@ class OrderBidirectionalSyncTest extends TestCase
             'type' => 'order_sync',
             'status' => SyncActivity::STATUS_COMPLETED,
         ]);
+    }
+
+    public function test_deleted_shopify_order_is_archived_instead_of_pushed(): void
+    {
+        $this->configureShopify();
+        $order = $this->order([
+            'shopify_order_id' => '1002',
+            'order_number' => '#1002',
+            'customer_name' => 'Test Müşteri',
+            'fulfillment_status' => 'fulfilled',
+            'shopify_needs_push' => true,
+            'total_price' => 150,
+        ]);
+        $order->items()->create([
+            'shopify_line_item_id' => '11',
+            'product_title' => 'Test Ürün',
+            'sku' => 'SKU-1',
+            'quantity' => 2,
+            'price' => 75,
+        ]);
+
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, 'access_scopes')) {
+                return Http::response(['access_scopes' => [['handle' => 'write_orders']]], 200);
+            }
+            if (str_contains($url, 'orders.json') && $request->method() === 'GET') {
+                return Http::response(['orders' => []], 200);
+            }
+            if ($request->method() === 'GET' && preg_match('#/orders/\d+\.json#', $url)) {
+                return Http::response(['errors' => 'Not Found'], 404);
+            }
+
+            return Http::response(['errors' => 'Not Found'], 404);
+        });
+
+        $result = app(OrderSyncService::class)->sync(10, 'any');
+
+        $this->assertGreaterThanOrEqual(1, $result['archived'] ?? 0);
+        $this->assertSoftDeleted('shopify_orders', ['id' => $order->id]);
+        $this->assertDatabaseHas('shopify_order_archives', [
+            'shopify_order_id' => '1002',
+            'order_number' => '#1002',
+            'customer_name' => 'Test Müşteri',
+            'reason' => 'shopify_deleted',
+        ]);
+        Http::assertNotSent(fn ($request): bool => $request->method() === 'POST' && str_contains($request->url(), 'fulfillments.json'));
+    }
+
+    public function test_shopify_refund_updates_delivered_order_and_notifies(): void
+    {
+        $this->configureShopify();
+        $existing = $this->order([
+            'shopify_order_id' => '9001',
+            'order_number' => '#9001',
+            'fulfillment_status' => 'delivered',
+            'payment_status' => 'paid',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'orders.json') && $request->method() === 'GET') {
+                return Http::response([
+                    'orders' => [[
+                        'id' => 9001,
+                        'name' => '#9001',
+                        'email' => 'ali@example.com',
+                        'financial_status' => 'refunded',
+                        'fulfillment_status' => 'fulfilled',
+                        'total_price' => '90.00',
+                        'currency' => 'TRY',
+                        'refunds' => [['id' => 71, 'created_at' => now()->toIso8601String()]],
+                        'line_items' => [
+                            ['id' => 1, 'title' => 'Ürün', 'quantity' => 1, 'price' => 90],
+                        ],
+                        'customer' => [
+                            'first_name' => 'Ali',
+                            'last_name' => 'Veli',
+                            'email' => 'ali@example.com',
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            return $this->shopifyHttpResponse($request);
+        });
+
+        app(OrderSyncService::class)->sync(10, 'any');
+
+        $existing->refresh();
+        $this->assertSame('refunded', $existing->fulfillment_status);
+        $this->assertSame('refunded', $existing->payment_status);
+        $this->assertDatabaseHas('admin_notifications', [
+            'type' => \App\Models\AdminNotification::TYPE_ORDER_REFUNDED,
+            'subject_id' => $existing->id,
+        ]);
+    }
+
+    public function test_shopify_return_request_updates_delivered_order_and_notifies(): void
+    {
+        $this->configureShopify();
+        $existing = $this->order([
+            'shopify_order_id' => '9002',
+            'order_number' => '#9002',
+            'fulfillment_status' => 'delivered',
+            'payment_status' => 'paid',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'graphql.json')) {
+                return Http::response([
+                    'data' => [
+                        'orders' => [
+                            'pageInfo' => ['hasNextPage' => false, 'endCursor' => null],
+                            'edges' => [[
+                                'node' => [
+                                    'legacyResourceId' => '9002',
+                                    'name' => '#9002',
+                                    'returnStatus' => 'IN_PROGRESS',
+                                    'displayFinancialStatus' => 'PAID',
+                                ],
+                            ]],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if (str_contains($request->url(), 'orders.json') && $request->method() === 'GET') {
+                return Http::response([
+                    'orders' => [[
+                        'id' => 9002,
+                        'name' => '#9002',
+                        'email' => 'ali@example.com',
+                        'financial_status' => 'paid',
+                        'fulfillment_status' => 'fulfilled',
+                        'total_price' => '90.00',
+                        'currency' => 'TRY',
+                        'line_items' => [
+                            ['id' => 1, 'title' => 'Ürün', 'quantity' => 1, 'price' => 90],
+                        ],
+                        'customer' => [
+                            'first_name' => 'Ali',
+                            'last_name' => 'Veli',
+                            'email' => 'ali@example.com',
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            return $this->shopifyHttpResponse($request);
+        });
+
+        app(OrderSyncService::class)->sync(10, 'any');
+
+        $existing->refresh();
+        $this->assertSame('partially_refunded', $existing->fulfillment_status);
+        $this->assertDatabaseHas('admin_notifications', [
+            'type' => \App\Models\AdminNotification::TYPE_ORDER_REFUND_REQUESTED,
+            'subject_id' => $existing->id,
+        ]);
+    }
+
+    public function test_shopify_line_item_changes_update_local_order(): void
+    {
+        $this->configureShopify();
+        $existing = $this->order([
+            'shopify_order_id' => '555',
+            'order_number' => '#555',
+            'fulfillment_status' => 'preparing',
+            'total_price' => 10,
+            'uyumsoft_order_id' => '88',
+        ]);
+        $existing->items()->create([
+            'shopify_line_item_id' => '1',
+            'product_title' => 'Eski',
+            'sku' => 'OLD',
+            'quantity' => 1,
+            'price' => 10,
+        ]);
+        $existing->update(['shopify_content_hash' => $existing->fresh(['items'])?->contentHash()]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'orders.json') && $request->method() === 'GET') {
+                return Http::response([
+                    'orders' => [[
+                        'id' => 555,
+                        'name' => '#555',
+                        'email' => 'ali@example.com',
+                        'financial_status' => 'paid',
+                        'fulfillment_status' => 'unfulfilled',
+                        'total_price' => '80.00',
+                        'currency' => 'TRY',
+                        'line_items' => [
+                            ['id' => 1, 'title' => 'Yeni Ürün', 'sku' => 'NEW', 'quantity' => 2, 'price' => 40],
+                        ],
+                        'customer' => [
+                            'first_name' => 'Ali',
+                            'last_name' => 'Veli',
+                            'email' => 'ali@example.com',
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            return $this->shopifyHttpResponse($request);
+        });
+
+        app(OrderSyncService::class)->sync(10, 'any');
+
+        $existing->refresh();
+        $this->assertSame('preparing', $existing->fulfillment_status);
+        $this->assertSame('80.00', (string) $existing->total_price);
+        $this->assertSame(1, $existing->items()->count());
+        $this->assertSame('Yeni Ürün', $existing->items()->first()?->product_title);
+        $this->assertSame(2, $existing->items()->first()?->quantity);
+        $this->assertTrue((bool) $existing->uyumsoft_needs_update);
+    }
+
+    public function test_sync_button_queues_background_job(): void
+    {
+        $this->configureShopify();
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $this->actingAs($user)
+            ->post(route('orders.sync'), ['limit' => 50, 'status' => 'any'])
+            ->assertRedirect(route('orders.index'))
+            ->assertSessionHas('success');
+
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\SyncShopifyOrders::class);
+    }
+
+    public function test_order_detail_shows_uyumsoft_invoice_lock_warning(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $order = $this->order([
+            'uyumsoft_order_id' => '99',
+            'uyumsoft_invoice_id' => '55',
+            'uyumsoft_invoice_locked' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', $order))
+            ->assertOk()
+            ->assertSee('UyumSoft faturası kesilmiş');
     }
 
     public function test_order_detail_sync_button_pushes_and_logs(): void

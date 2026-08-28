@@ -246,6 +246,32 @@ class UyumSoftService
     }
 
     /**
+     * Update an existing sales order in UyumSoft / UyumCloud.
+     *
+     * @param  array<string, mixed>  $order
+     * @return array<string, mixed>
+     */
+    public function updateSalesOrder(array $order): array
+    {
+        if ($this->isCloudApi) {
+            return $this->cloudRequestFirst(
+                ['PSM/UpdateOrderM', 'PSM/SaveOrderM', 'PSM/SaveOrder', 'SLS/SaveOrderM'],
+                [
+                    'value' => $order,
+                ]
+            );
+        }
+
+        $id = $order['id'] ?? $order['Id'] ?? null;
+
+        return $this->makeLegacyRequest(
+            'PUT',
+            $id ? 'orders/'.$id : 'orders',
+            $order
+        );
+    }
+
+    /**
      * Find an existing sales order by document / Shopify number.
      *
      * @return array<string, mixed>|null
@@ -1056,7 +1082,8 @@ class UyumSoftService
     /**
      * UyumSoft fiyat listesi satırından satış fiyatı ve iskontoyu hesapla.
      *
-     * unitPriceTra liste fiyatıdır; disc1/2/3 oranları peş peşe uygulanır.
+     * unitPriceTra liste fiyatıdır. discCode1/2/3 = ORAN yüzde, TUTAR sabit tutar (TL).
+     * Kod boşsa 100'ün üzerindeki değer tutar indirimi kabul edilir.
      *
      * @param  array<string, mixed>  $priceRow
      * @return array{price: float, compare_at_price: float|null, disc1_rate: float, disc2_rate: float, disc3_rate: float}
@@ -1067,9 +1094,22 @@ class UyumSoftService
         $disc1 = max(0.0, (float) ($priceRow['disc1Rate'] ?? $priceRow['disc1'] ?? 0));
         $disc2 = max(0.0, (float) ($priceRow['disc2Rate'] ?? $priceRow['disc2'] ?? 0));
         $disc3 = max(0.0, (float) ($priceRow['disc3Rate'] ?? $priceRow['disc3'] ?? 0));
-        $factor = (1 - ($disc1 / 100)) * (1 - ($disc2 / 100)) * (1 - ($disc3 / 100));
-        $sale = round($list * $factor, 2);
-        $hasDiscount = ($disc1 + $disc2 + $disc3) > 0 && $sale < $list;
+
+        $sale = $list;
+        foreach ([1 => $disc1, 2 => $disc2, 3 => $disc3] as $slot => $value) {
+            if ($value <= 0) {
+                continue;
+            }
+
+            if ($this->isAmountDiscount($priceRow, $slot, $value)) {
+                $sale -= $value;
+            } else {
+                $sale *= (1 - (min($value, 100.0) / 100));
+            }
+        }
+
+        $sale = round(max(0.0, $sale), 2);
+        $hasDiscount = $sale + 0.009 < $list;
 
         return [
             'price' => $hasDiscount ? $sale : $list,
@@ -1078,6 +1118,24 @@ class UyumSoftService
             'disc2_rate' => $disc2,
             'disc3_rate' => $disc3,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $priceRow
+     */
+    private function isAmountDiscount(array $priceRow, int $slot, float $value): bool
+    {
+        $code = strtoupper(trim((string) (
+            $priceRow['discCode'.$slot]
+            ?? $priceRow['disc'.$slot.'Code']
+            ?? ''
+        )));
+
+        if ($code !== '') {
+            return str_contains($code, 'TUTAR') || $code === 'A' || $code === 'AMT';
+        }
+
+        return $value > 100;
     }
 
     /**
@@ -1491,7 +1549,7 @@ class UyumSoftService
                 $message .= ' ('.$exceptionMessage.')';
             }
 
-            Log::channel('stack')->error('UyumSoft API error', [
+            $this->logSafely('error', 'UyumSoft API error', [
                 'endpoint' => $endpoint,
                 'status' => $statusCode,
                 'message' => $message,
@@ -1779,7 +1837,7 @@ class UyumSoftService
         $json = $response->json();
         $message = $this->summarizeErrorMessage($response, $endpoint, is_array($json) ? $json : null, $raw);
 
-        Log::channel('stack')->error('UyumSoft API error', [
+        $this->logSafely('error', 'UyumSoft API error', [
             'endpoint' => $endpoint,
             'status' => $response->status(),
             'message' => $message,
@@ -1826,5 +1884,17 @@ class UyumSoftService
         $plain = trim(strip_tags($raw));
 
         return $plain !== '' ? \Illuminate\Support\Str::limit($plain, 280) : 'Bilinmeyen API hatası.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function logSafely(string $level, string $message, array $context = []): void
+    {
+        try {
+            Log::channel('stack')->log($level, $message, $context);
+        } catch (\Throwable) {
+            // laravel.log yazılamazsa UyumSoft isteğini düşürme.
+        }
     }
 }

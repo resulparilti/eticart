@@ -601,12 +601,12 @@ class MailService
         } catch (Throwable) {
             return [
                 'name' => trim((string) Setting::getValue('general_company_name', Setting::getValue('general_app_name', config('app.name')))),
-                'header_bg' => '#0f2a3d',
+                'header_bg' => '#000000',
                 'header_text' => '#ffffff',
                 'body_text' => '#142433',
                 'muted_text' => '#5b6b7c',
                 'link' => '#c45c26',
-                'button_bg' => '#0f2a3d',
+                'button_bg' => '#000000',
                 'button_text' => '#ffffff',
                 'logo_url' => null,
                 'site_url' => '',

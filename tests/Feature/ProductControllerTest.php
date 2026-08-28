@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Jobs\ProcessBulkProductAction;
+use App\Models\Setting;
 use App\Models\ShopifyProduct;
 use App\Models\User;
 use App\Models\UyumSoftProduct;
@@ -230,7 +231,7 @@ class ProductControllerTest extends TestCase
         $this->actingAs($user)
             ->get(route('products.edit', $product))
             ->assertOk()
-            ->assertSee('Varyant görselleri')
+            ->assertSee('Varyantlar')
             ->assertSee('Siyah');
 
         $this->actingAs($user)
@@ -249,6 +250,68 @@ class ProductControllerTest extends TestCase
         $product->refresh();
         $this->assertNotEmpty($product->variant_info['variants'][0]['image']);
         $this->assertStringContainsString('/storage/products/'.$product->id.'/variants/', $product->variant_info['variants'][0]['image']);
+    }
+
+    public function test_product_edit_can_save_variant_price_and_stock(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $product = UyumSoftProduct::query()->create([
+            'uyumsoft_id' => 'U-VAR-PRICE',
+            'sku' => 'SKU-VAR',
+            'title' => 'Bere',
+            'original_price' => 100,
+            'stock' => 4,
+            'is_active' => true,
+            'last_sync' => now(),
+            'variant_info' => [
+                'attributes' => [
+                    ['name' => 'RENK', 'values' => ['Siyah', 'Lacivert']],
+                ],
+                'variants' => [
+                    [
+                        'title' => 'Siyah',
+                        'sku' => 'SKU-VAR-S',
+                        'barcode' => '111',
+                        'price' => 100,
+                        'stock' => 2,
+                    ],
+                    [
+                        'title' => 'Lacivert',
+                        'sku' => 'SKU-VAR-L',
+                        'barcode' => '222',
+                        'price' => 100,
+                        'stock' => 2,
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('products.edit', $product))
+            ->assertOk()
+            ->assertSee('name="variant_prices[0]"', false)
+            ->assertSee('name="variant_stocks[0]"', false)
+            ->assertSee('readonly', false);
+
+        $this->actingAs($user)
+            ->put(route('products.update', $product), [
+                'title' => 'Bere',
+                'sku' => 'SKU-VAR',
+                'original_price' => 100,
+                'stock' => 4,
+                'is_active' => 1,
+                'variant_prices' => [0 => '129.50', 1 => '89.00'],
+                'variant_stocks' => [0 => '5', 1 => '3'],
+            ])
+            ->assertRedirect(route('products.show', $product));
+
+        $product->refresh();
+        $this->assertSame(129.5, (float) $product->variant_info['variants'][0]['price']);
+        $this->assertSame(89.0, (float) $product->variant_info['variants'][1]['price']);
+        $this->assertSame(5, (int) $product->variant_info['variants'][0]['stock']);
+        $this->assertSame(3, (int) $product->variant_info['variants'][1]['stock']);
+        $this->assertSame(89.0, (float) $product->original_price);
+        $this->assertSame(8, (int) $product->stock);
     }
 
     public function test_pull_shopify_one_imports_images_metafields_and_collections(): void
@@ -414,7 +477,7 @@ class ProductControllerTest extends TestCase
             ->get(route('products.show', $product))
             ->assertOk()
             ->assertSee('data-full-url="https://cdn.shopify.com/bere.jpg"', false)
-            ->assertSee('Diğer görselleri gör', false)
+            ->assertSee('Daha fazla gör', false)
             ->assertSee('Shopify koleksiyonları')
             ->assertSee('Kış')
             ->assertSee('Shopify meta alanları')
@@ -584,5 +647,380 @@ class ProductControllerTest extends TestCase
         Queue::assertPushed(ProcessBulkProductAction::class, function (ProcessBulkProductAction $job): bool {
             return $job->action === 'activate';
         });
+    }
+
+    public function test_single_product_push_shopify_is_queued(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $product = UyumSoftProduct::query()->create([
+            'uyumsoft_id' => '10BRU004',
+            'sku' => '10BRU004',
+            'title' => 'Kaşmir Bere',
+            'original_price' => 250,
+            'stock' => 10,
+            'is_active' => true,
+            'last_sync' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('products.push-shopify', $product), [
+                'sync_options' => ['all'],
+            ])
+            ->assertRedirect(route('products.show', $product))
+            ->assertSessionHas('success')
+            ->assertSessionHas('sync_activity_uuid');
+
+        Queue::assertPushed(ProcessBulkProductAction::class, function (ProcessBulkProductAction $job) use ($product): bool {
+            return $job->action === 'push_shopify'
+                && $job->productIds === [$product->id];
+        });
+    }
+
+    public function test_shopify_push_uses_variant_barcode_as_sku(): void
+    {
+        config([
+            'services.shopify.store_url' => 'https://eticart-test.myshopify.com',
+            'services.shopify.access_token' => 'shpat_test_token',
+            'services.shopify.api_version' => '2024-01',
+        ]);
+
+        $product = UyumSoftProduct::query()->create([
+            'uyumsoft_id' => '30ATU016',
+            'sku' => '30ATU016',
+            'title' => 'Atkı',
+            'original_price' => 100,
+            'stock' => 2,
+            'is_active' => true,
+            'last_sync' => now(),
+            'variant_info' => [
+                'attributes' => [
+                    ['name' => 'BEDEN', 'values' => ['30x180 cm']],
+                    ['name' => 'RENK', 'values' => ['Kırmızı']],
+                ],
+                'variants' => [[
+                    'title' => '30x180 cm / Kırmızı',
+                    'sku' => '30ATU016-30x180-300740',
+                    'barcode' => '8685130001756',
+                    'price' => 100,
+                    'stock' => 2,
+                    'attribute_1' => '30x180 cm',
+                    'attribute_2' => 'Kırmızı',
+                ]],
+            ],
+        ]);
+
+        $createSku = null;
+        Http::fake(function (\Illuminate\Http\Client\Request $request) use (&$createSku) {
+            $url = $request->url();
+            $payload = $request->data();
+
+            if ($request->method() === 'POST' && str_contains($url, '/products.json')) {
+                $createSku = $payload['product']['variants'][0]['sku'] ?? null;
+                $barcode = $payload['product']['variants'][0]['barcode'] ?? null;
+
+                return Http::response([
+                    'product' => [
+                        'id' => 555,
+                        'title' => 'Atkı',
+                        'handle' => 'atki',
+                        'status' => 'active',
+                        'body_html' => '',
+                        'images' => [],
+                        'variants' => [[
+                            'id' => 777,
+                            'sku' => $createSku,
+                            'barcode' => $barcode,
+                            'price' => '100.00',
+                            'inventory_item_id' => 9001,
+                        ]],
+                    ],
+                ], 201);
+            }
+
+            if (str_contains($url, '/products/555.json')) {
+                return Http::response([
+                    'product' => [
+                        'id' => 555,
+                        'title' => 'Atkı',
+                        'handle' => 'atki',
+                        'status' => 'active',
+                        'body_html' => '',
+                        'images' => [],
+                        'variants' => [[
+                            'id' => 777,
+                            'sku' => '8685130001756',
+                            'barcode' => '8685130001756',
+                            'price' => '100.00',
+                            'inventory_item_id' => 9001,
+                        ]],
+                    ],
+                ], 200);
+            }
+
+            if (str_contains($url, '/variants/777.json')) {
+                return Http::response([
+                    'variant' => [
+                        'id' => 777,
+                        'sku' => $payload['variant']['sku'] ?? '8685130001756',
+                        'barcode' => $payload['variant']['barcode'] ?? '8685130001756',
+                    ],
+                ], 200);
+            }
+
+            return Http::response([], 200);
+        });
+
+        app(\App\Services\ProductSyncService::class)->pushProductToShopify(
+            $product,
+            [\App\Services\ProductSyncService::OPTION_INFO]
+        );
+
+        $this->assertSame('8685130001756', $createSku);
+        $this->assertNotSame('30ATU016-30x180-300740', $createSku);
+    }
+
+    public function test_existing_shopify_product_gets_missing_variants_created(): void
+    {
+        config([
+            'services.shopify.store_url' => 'https://eticart-test.myshopify.com',
+            'services.shopify.access_token' => 'shpat_test_token',
+            'services.shopify.api_version' => '2024-01',
+        ]);
+
+        $product = UyumSoftProduct::query()->create([
+            'uyumsoft_id' => '10BRU004',
+            'sku' => '10BRU004',
+            'title' => 'Kaşmir Bere',
+            'original_price' => 250,
+            'stock' => 4,
+            'is_active' => true,
+            'synced_to_shopify' => true,
+            'shopify_id' => '9299860127964',
+            'last_sync' => now(),
+            'variant_info' => [
+                'attributes' => [
+                    ['name' => 'RENK', 'values' => ['Siyah', 'Haki']],
+                    ['name' => 'BEDEN', 'values' => ['Standart']],
+                ],
+                'variants' => [
+                    [
+                        'title' => 'Standart / Siyah',
+                        'sku' => '10BRU004-STD-SIYAH',
+                        'barcode' => '8685130000360',
+                        'price' => 250,
+                        'stock' => 2,
+                        'attribute_1' => 'Standart',
+                        'attribute_2' => 'Siyah',
+                    ],
+                    [
+                        'title' => 'Standart / Haki',
+                        'sku' => '10BRU004-STD-HAKI',
+                        'barcode' => '8685130000384',
+                        'price' => 250,
+                        'stock' => 2,
+                        'attribute_1' => 'Standart',
+                        'attribute_2' => 'Haki',
+                    ],
+                ],
+            ],
+        ]);
+
+        $createdBarcodes = [];
+        $updatedDefault = false;
+
+        Http::fake(function (\Illuminate\Http\Client\Request $request) use (&$createdBarcodes, &$updatedDefault) {
+            $url = $request->url();
+            $payload = $request->data();
+
+            $defaultVariant = [
+                'id' => 111,
+                'title' => 'Default Title',
+                'option1' => 'Default Title',
+                'sku' => '8685130000360',
+                'barcode' => '8685130000360',
+                'price' => '250.00',
+                'inventory_item_id' => 9001,
+                'inventory_quantity' => 2,
+            ];
+
+            $twoVariants = [
+                array_merge($defaultVariant, [
+                    'title' => 'Standart / Siyah',
+                    'option1' => 'Standart',
+                    'option2' => 'Siyah',
+                ]),
+                [
+                    'id' => 222,
+                    'title' => 'Standart / Haki',
+                    'option1' => 'Standart',
+                    'option2' => 'Haki',
+                    'sku' => '8685130000384',
+                    'barcode' => '8685130000384',
+                    'price' => '250.00',
+                    'inventory_item_id' => 9002,
+                    'inventory_quantity' => 2,
+                ],
+            ];
+
+            if ($request->method() === 'POST' && str_contains($url, '/products/9299860127964/variants.json')) {
+                $createdBarcodes[] = $payload['variant']['barcode'] ?? null;
+
+                return Http::response([
+                    'variant' => $twoVariants[1],
+                ], 201);
+            }
+
+            if ($request->method() === 'PUT' && str_contains($url, '/variants/111.json')) {
+                $updatedDefault = true;
+
+                return Http::response(['variant' => $twoVariants[0]], 200);
+            }
+
+            if (str_contains($url, '/products/9299860127964.json')) {
+                $variants = $createdBarcodes === [] ? [$defaultVariant] : $twoVariants;
+
+                return Http::response([
+                    'product' => [
+                        'id' => 9299860127964,
+                        'title' => 'Kaşmir Bere',
+                        'handle' => 'kasmir-bere',
+                        'status' => 'active',
+                        'body_html' => '',
+                        'images' => [],
+                        'variants' => $variants,
+                    ],
+                ], 200);
+            }
+
+            return Http::response([], 200);
+        });
+
+        $this->assertCount(2, $product->fresh()->variantRows());
+
+        $mirror = app(\App\Services\ProductSyncService::class)->pushProductToShopify(
+            $product,
+            [\App\Services\ProductSyncService::OPTION_INFO]
+        );
+
+        $recorded = collect(Http::recorded())->map(static function (array $pair): string {
+            return $pair[0]->method().' '.$pair[0]->url();
+        })->implode("\n");
+
+        $this->assertTrue($updatedDefault, $recorded);
+        $this->assertContains('8685130000384', $createdBarcodes, $recorded);
+        $this->assertSame(2, $mirror->variant_count);
+    }
+
+    public function test_shopify_push_writes_variant_inventory_levels(): void
+    {
+        config([
+            'services.shopify.store_url' => 'https://eticart-test.myshopify.com',
+            'services.shopify.access_token' => 'shpat_test_token',
+            'services.shopify.api_version' => '2024-01',
+        ]);
+
+        Setting::setValue('shopify_location_id', '555', 'shopify', 'Shopify Location ID');
+
+        $product = UyumSoftProduct::query()->create([
+            'uyumsoft_id' => '10BRU-STOCK',
+            'sku' => '10BRU-STOCK',
+            'title' => 'Kaşmir Bere',
+            'original_price' => 250,
+            'stock' => 10,
+            'is_active' => true,
+            'synced_to_shopify' => true,
+            'shopify_id' => '9299860128001',
+            'last_sync' => now(),
+            'variant_info' => [
+                'variants' => [
+                    [
+                        'title' => 'Siyah',
+                        'sku' => '10BRU-STOCK-S',
+                        'barcode' => '8685130001111',
+                        'price' => 250,
+                        'stock' => 7,
+                        'attribute_1' => 'Siyah',
+                    ],
+                    [
+                        'title' => 'Haki',
+                        'sku' => '10BRU-STOCK-H',
+                        'barcode' => '8685130002222',
+                        'price' => 250,
+                        'stock' => 3,
+                        'attribute_1' => 'Haki',
+                    ],
+                ],
+            ],
+        ]);
+
+        $setQuantities = [];
+
+        Http::fake(function (\Illuminate\Http\Client\Request $request) use (&$setQuantities) {
+            $url = $request->url();
+            $payload = $request->data();
+
+            if (str_contains($url, 'inventory_levels/set.json')) {
+                $setQuantities[] = (int) ($payload['available'] ?? -1);
+
+                return Http::response(['inventory_level' => ['available' => $payload['available'] ?? 0]], 200);
+            }
+
+            if (str_contains($url, 'inventory_levels/connect.json') || str_contains($url, 'inventory_items/')) {
+                return Http::response(['inventory_level' => []], 200);
+            }
+
+            $variants = [
+                [
+                    'id' => 301,
+                    'title' => 'Siyah',
+                    'option1' => 'Siyah',
+                    'sku' => '8685130001111',
+                    'barcode' => '8685130001111',
+                    'price' => '250.00',
+                    'inventory_item_id' => 9101,
+                    'inventory_quantity' => 0,
+                ],
+                [
+                    'id' => 302,
+                    'title' => 'Haki',
+                    'option1' => 'Haki',
+                    'sku' => '8685130002222',
+                    'barcode' => '8685130002222',
+                    'price' => '250.00',
+                    'inventory_item_id' => 9102,
+                    'inventory_quantity' => 0,
+                ],
+            ];
+
+            if ($request->method() === 'POST' && str_contains($url, '/variants.json')) {
+                return Http::response(['variant' => $variants[1]], 201);
+            }
+
+            if (str_contains($url, '/products/9299860128001.json') || str_contains($url, '/variants/')) {
+                return Http::response([
+                    'product' => [
+                        'id' => 9299860128001,
+                        'title' => 'Kaşmir Bere',
+                        'handle' => 'kasmir-bere',
+                        'status' => 'active',
+                        'body_html' => '',
+                        'images' => [],
+                        'variants' => $variants,
+                    ],
+                    'variant' => $variants[0],
+                ], 200);
+            }
+
+            return Http::response([], 200);
+        });
+
+        app(\App\Services\ProductSyncService::class)->pushProductToShopify($product);
+
+        sort($setQuantities);
+        $this->assertContains(3, $setQuantities);
+        $this->assertContains(7, $setQuantities);
+        $this->assertGreaterThanOrEqual(2, count($setQuantities));
     }
 }

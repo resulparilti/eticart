@@ -892,8 +892,12 @@ code {
     background: transparent;
 }
 
-.eticart-sync-item__dismiss:disabled {
-    opacity: 0.45;
+.eticart-sync-item__dismiss.is-cancel {
+    color: #dc3545;
+}
+
+.eticart-sync-item__dismiss.is-cancel:hover {
+    color: #b02a37;
 }
 
 .eticart-sync-item:hover,
@@ -1283,7 +1287,7 @@ code {
     z-index: 2000;
     display: none;
     place-items: center;
-    padding: 48px 24px 24px;
+    padding: 56px 72px 48px;
     background: rgba(10, 16, 24, 0.92);
     cursor: zoom-out;
 }
@@ -1300,7 +1304,7 @@ code {
     display: block;
     width: auto !important;
     height: auto !important;
-    max-width: min(92vw, 1100px);
+    max-width: min(calc(92vw - 140px), 1100px);
     max-height: 86vh;
     object-fit: contain;
     background: transparent;
@@ -1334,14 +1338,14 @@ code {
 .eticart-lightbox__nav {
     position: absolute;
     top: 50%;
-    z-index: 1;
-    width: 48px;
-    height: 48px;
-    margin-top: -24px;
+    z-index: 3;
+    width: 52px;
+    height: 52px;
+    margin-top: -26px;
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.2);
     color: #fff;
     font-size: 36px;
     line-height: 1;

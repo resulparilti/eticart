@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Exceptions\SyncActivityCancelledException;
 use App\Models\SyncActivity;
 use App\Models\SyncActivityLog;
 use Illuminate\Support\Facades\Auth;
@@ -51,6 +52,8 @@ class SyncActivityTracker
             return;
         }
 
+        $this->abortIfCancelled();
+
         $this->current->update([
             'status' => SyncActivity::STATUS_RUNNING,
             'started_at' => $this->current->started_at ?? now(),
@@ -74,6 +77,8 @@ class SyncActivityTracker
         if (! $this->current) {
             return;
         }
+
+        $this->abortIfCancelled();
 
         $payload = [
             'progress_current' => max(0, $current),
@@ -122,6 +127,13 @@ class SyncActivityTracker
             return;
         }
 
+        $this->current->refresh();
+        if ($this->current->isCancelled()) {
+            $this->reset();
+
+            return;
+        }
+
         $status = $errors > 0 ? SyncActivity::STATUS_PARTIAL : SyncActivity::STATUS_COMPLETED;
         $mergedMeta = array_merge($this->current->meta ?? [], $meta, [
             'synced' => $synced,
@@ -151,6 +163,13 @@ class SyncActivityTracker
             return;
         }
 
+        $this->current->refresh();
+        if ($this->current->isCancelled()) {
+            $this->reset();
+
+            return;
+        }
+
         $this->current->update([
             'status' => SyncActivity::STATUS_FAILED,
             'message' => $this->summarize($message),
@@ -174,15 +193,53 @@ class SyncActivityTracker
     }
 
     /**
+     * Kullanıcı veya izleyici iptali: kaydı kapatır, çalışan job bir sonraki progress'te durur.
+     */
+    public function cancel(string $message = 'İşlem iptal edildi.'): void
+    {
+        if (! $this->current) {
+            return;
+        }
+
+        $this->current->refresh();
+        if (! $this->current->isActive()) {
+            return;
+        }
+
+        $this->current->cancel($this->summarize($message));
+        $this->log('warning', $message);
+        $this->reset();
+    }
+
+    /**
+     * @throws SyncActivityCancelledException
+     */
+    public function abortIfCancelled(): void
+    {
+        if (! $this->current) {
+            return;
+        }
+
+        $this->current->refresh();
+        if ($this->current->isCancelled()) {
+            throw new SyncActivityCancelledException();
+        }
+    }
+
+    /**
      * Cron / kuyruk job'ları arasında önceki kaydı bırakıp yeni aktivite açmak için.
      */
     public function ensureFresh(string $type, string $title, ?int $total = null, array $meta = []): SyncActivity
     {
-        if ($this->current && $this->current->finished_at === null) {
-            return $this->current;
-        }
+        if ($this->current) {
+            $this->current->refresh();
 
-        $this->reset();
+            if ($this->current->type === $type && $this->current->isActive()) {
+                return $this->current;
+            }
+
+            $this->reset();
+        }
 
         return $this->start($type, $title, $total, $meta);
     }

@@ -12,6 +12,13 @@
         $canSms = ($smsConfigured ?? false) && filled($order->customer_phone);
         $canMail = filled($order->customer_email);
     @endphp
+    @if ($order->uyumsoft_invoice_locked)
+        <div class="alert alert-warning" role="alert">
+            <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i> UyumSoft faturası kesilmiş</div>
+            Bu siparişin içeriği Shopify tarafında değişti. Fatura oluştuğu için UyumSoft siparişi otomatik güncellenmedi.
+            Fatura iptali veya iadesinden sonra ERP kaydını manuel düzeltmeniz gerekir.
+        </div>
+    @endif
     <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <div>
             <h1 class="h3 mb-1">{{ $order->order_number }}</h1>

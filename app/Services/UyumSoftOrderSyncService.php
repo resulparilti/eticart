@@ -73,6 +73,14 @@ class UyumSoftOrderSyncService
                 ->limit($limit)
                 ->get();
 
+            $contentUpdates = ShopifyOrder::query()
+                ->with('items')
+                ->needsUyumsoftUpdate()
+                ->orderBy('id')
+                ->limit($limit)
+                ->get()
+                ->reject(fn (ShopifyOrder $order): bool => $pending->contains('id', $order->id));
+
             $invoiceCandidates = ShopifyOrder::query()
                 ->whereNotNull('uyumsoft_order_id')
                 ->whereNull('invoice_path')
@@ -81,10 +89,10 @@ class UyumSoftOrderSyncService
                 ->limit($limit)
                 ->get();
 
-            $this->activityTracker->setTotal($pending->count() + $invoiceCandidates->count());
+            $this->activityTracker->setTotal($pending->count() + $contentUpdates->count() + $invoiceCandidates->count());
             $processed = 0;
 
-            foreach ($pending as $order) {
+            foreach ($pending->concat($contentUpdates) as $order) {
                 try {
                     $result = $this->pushOrder($order);
                     if ($result['pushed']) {
@@ -101,11 +109,11 @@ class UyumSoftOrderSyncService
                     $this->activityTracker->log('error', $order->order_number.': '.$e->getMessage());
                 }
                 $processed++;
-                $this->activityTracker->progress($processed, $pending->count() + $invoiceCandidates->count());
+                $this->activityTracker->progress($processed, $pending->count() + $contentUpdates->count() + $invoiceCandidates->count());
             }
 
             foreach ($invoiceCandidates as $order) {
-                if ($pending->contains('id', $order->id)) {
+                if ($pending->contains('id', $order->id) || $contentUpdates->contains('id', $order->id)) {
                     continue;
                 }
 
@@ -119,7 +127,7 @@ class UyumSoftOrderSyncService
                     $this->activityTracker->log('error', $order->order_number.' fatura: '.$e->getMessage());
                 }
                 $processed++;
-                $this->activityTracker->progress($processed, $pending->count() + $invoiceCandidates->count());
+                $this->activityTracker->progress($processed, $pending->count() + $contentUpdates->count() + $invoiceCandidates->count());
             }
 
             $duration = round(microtime(true) - $startedAt, 2);
@@ -217,6 +225,14 @@ class UyumSoftOrderSyncService
             $pushed = false;
             $invoice = false;
 
+            if ($order->uyumsoftInvoiceLocked() && $order->uyumsoft_needs_update) {
+                $this->markInvoiceLockedWarning($order);
+                $this->activityTracker->log(
+                    'warning',
+                    $order->order_number.': fatura kesildiği için UyumSoft siparişi güncellenmedi.'
+                );
+            }
+
             if ($order->uyumsoft_order_id === null && $this->shouldPush($order)) {
                 $this->activityTracker->log('info', 'UyumSoft sipariş oluşturma deneniyor…');
                 $result = $this->pushOrder($order);
@@ -231,7 +247,12 @@ class UyumSoftOrderSyncService
                     'UyumSoft sipariş kaydı mevcut ('.$order->uyumsoft_order_id.').'
                 );
 
-                if (! $order->hasInvoice()) {
+                if ($order->needsUyumsoftContentUpdate()) {
+                    $this->activityTracker->log('info', 'Sipariş içeriği UyumSoft’ta güncelleniyor…');
+                    $result = $this->pushOrder($order->fresh(['items']) ?? $order);
+                    $pushed = $result['pushed'];
+                    $invoice = $result['invoice'];
+                } elseif (! $order->hasInvoice()) {
                     $this->activityTracker->log('info', 'Fatura sorgulanıyor…');
                     $invoice = $this->pullInvoice($order);
                 } else {
@@ -317,16 +338,34 @@ class UyumSoftOrderSyncService
             return ['pushed' => false, 'invoice' => false];
         }
 
-        if ($order->uyumsoft_order_id) {
+        if ($this->shouldLockInvoicedUpdate($order)) {
+            $this->markInvoiceLockedWarning($order);
+            $this->activityTracker->log(
+                'warning',
+                $order->order_number.': fatura kesildiği için UyumSoft siparişi güncellenmedi.'
+            );
+
             return ['pushed' => false, 'invoice' => $this->pullInvoice($order)];
+        }
+
+        if ($order->uyumsoft_order_id) {
+            if (! $order->needsUyumsoftContentUpdate()) {
+                return ['pushed' => false, 'invoice' => $this->pullInvoice($order)];
+            }
+
+            return $this->updateExistingOrder($order);
         }
 
         $existing = $this->uyumSoftService->findSalesOrder($this->erpDocNo($order), $order->order_number);
         if ($existing !== null) {
+            $hash = $order->fresh(['items'])?->contentHash() ?? $order->contentHash();
             $order->update([
                 'uyumsoft_order_id' => $this->extractRecordId($existing),
                 'uyumsoft_pushed_at' => now(),
                 'uyumsoft_last_error' => null,
+                'uyumsoft_content_hash' => $hash,
+                'shopify_content_hash' => $hash,
+                'uyumsoft_needs_update' => false,
             ]);
 
             return ['pushed' => false, 'invoice' => $this->pullInvoice($order->fresh() ?? $order)];
@@ -341,6 +380,9 @@ class UyumSoftOrderSyncService
             'uyumsoft_order_id' => $remoteId,
             'uyumsoft_pushed_at' => now(),
             'uyumsoft_last_error' => null,
+            'uyumsoft_content_hash' => $order->fresh(['items'])?->contentHash() ?? $order->contentHash(),
+            'uyumsoft_needs_update' => false,
+            'shopify_content_hash' => $order->fresh(['items'])?->contentHash() ?? $order->contentHash(),
         ]);
 
         $this->activityTracker->log('info', $order->order_number.' UyumSoft’a yazıldı ('.$remoteId.').');
@@ -642,6 +684,10 @@ class UyumSoftOrderSyncService
             'town' => $locality['town'],
             'zipCode' => $locality['zip'] ?: $order->shipping_zip,
             'details' => $lines,
+            ...(filled($order->uyumsoft_order_id) ? [
+                'id' => $order->uyumsoft_order_id,
+                'Id' => $order->uyumsoft_order_id,
+            ] : []),
         ]);
     }
 
@@ -755,6 +801,52 @@ class UyumSoftOrderSyncService
         }
 
         return null;
+    }
+
+    /**
+     * @return array{pushed: bool, invoice: bool}
+     */
+    private function updateExistingOrder(ShopifyOrder $order): array
+    {
+        $payload = $this->buildOrderPayload($order);
+        $response = $this->uyumSoftService->updateSalesOrder($payload);
+        $record = is_array($response['result'] ?? null) ? $response['result'] : $response;
+        $remoteId = $this->extractRecordId($record) ?? (string) $order->uyumsoft_order_id;
+        $hash = $order->fresh(['items'])?->contentHash() ?? $order->contentHash();
+
+        $order->update([
+            'uyumsoft_order_id' => $remoteId,
+            'uyumsoft_pushed_at' => now(),
+            'uyumsoft_last_error' => null,
+            'uyumsoft_content_hash' => $hash,
+            'shopify_content_hash' => $hash,
+            'uyumsoft_needs_update' => false,
+        ]);
+
+        $this->activityTracker->log('info', $order->order_number.' UyumSoft siparişi güncellendi ('.$remoteId.').');
+
+        return ['pushed' => true, 'invoice' => $this->pullInvoice($order->fresh() ?? $order)];
+    }
+
+    private function shouldLockInvoicedUpdate(ShopifyOrder $order): bool
+    {
+        if (! filled($order->uyumsoft_order_id) || ! $order->uyumsoftInvoiceLocked()) {
+            return false;
+        }
+
+        return $order->uyumsoft_needs_update
+            || $order->uyumsoft_invoice_locked
+            || (filled($order->shopify_content_hash)
+                && filled($order->uyumsoft_content_hash)
+                && $order->shopify_content_hash !== $order->uyumsoft_content_hash);
+    }
+
+    private function markInvoiceLockedWarning(ShopifyOrder $order): void
+    {
+        $order->update([
+            'uyumsoft_invoice_locked' => true,
+            'uyumsoft_needs_update' => false,
+        ]);
     }
 
     private function markOrderError(ShopifyOrder $order, string $message): void

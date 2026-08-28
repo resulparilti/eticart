@@ -263,6 +263,78 @@ class UyumSoftServiceTest extends TestCase
         $this->assertNull($fullPrice['compare_at_price']);
     }
 
+    public function test_normalize_applies_variant_amount_discount_from_disc_code(): void
+    {
+        $normalized = (new UyumSoftService())->normalizeProduct([
+            'itemCode' => '20ATU008',
+            'itemName' => 'Runner',
+            'itemAttributeList' => [
+                ['itemAttributeId' => 349, 'itemAttributeName' => 'BEDEN', 'itemAttributeValue' => '30x180 cm', 'itemAttributeCode' => '30x180'],
+                ['itemAttributeId' => 359, 'itemAttributeName' => 'RENK', 'itemAttributeValue' => 'Kırmızı', 'itemAttributeCode' => '300755'],
+                ['itemAttributeId' => 360, 'itemAttributeName' => 'RENK', 'itemAttributeValue' => 'Bebek Mavisi', 'itemAttributeCode' => '300687'],
+            ],
+            'itemBarcodeList' => [
+                [
+                    'barcode' => '8685130000810',
+                    'itemAttribute1Id' => 349,
+                    'itemAttribute2Id' => 359,
+                    'itemAttribute3Id' => 0,
+                    'itemAttributeCode1' => '30x180',
+                    'itemAttributeCode2' => '300755',
+                ],
+                [
+                    'barcode' => '8685130000834',
+                    'itemAttribute1Id' => 349,
+                    'itemAttribute2Id' => 360,
+                    'itemAttribute3Id' => 0,
+                    'itemAttributeCode1' => '30x180',
+                    'itemAttributeCode2' => '300687',
+                ],
+            ],
+            'itemPriceList' => [
+                [
+                    'itemAttribute1Id' => 349,
+                    'itemAttribute2Id' => 359,
+                    'itemAttribute3Id' => 0,
+                    'unitPriceTra' => 5830,
+                    'disc1Rate' => 0,
+                    'disc2Rate' => 1000,
+                    'disc3Rate' => 0,
+                    'discCode1' => '',
+                    'discCode2' => 'TUTAR',
+                    'discCode3' => '',
+                ],
+                [
+                    'itemAttribute1Id' => 349,
+                    'itemAttribute2Id' => 360,
+                    'itemAttribute3Id' => 0,
+                    'unitPriceTra' => 5830,
+                    'disc1Rate' => 10,
+                    'disc2Rate' => 0,
+                    'disc3Rate' => 0,
+                    'discCode1' => 'ORAN',
+                    'discCode2' => '',
+                    'discCode3' => '',
+                ],
+            ],
+        ]);
+
+        $byBarcode = [];
+        foreach ($normalized['variant_info']['variants'] as $variant) {
+            $byBarcode[$variant['barcode']] = $variant;
+        }
+
+        $amount = $byBarcode['8685130000810'];
+        $percent = $byBarcode['8685130000834'];
+
+        $this->assertSame(4830.0, $amount['price']);
+        $this->assertSame(5830.0, $amount['compare_at_price']);
+        $this->assertSame(1000.0, $amount['disc2_rate']);
+        $this->assertSame(5247.0, $percent['price']);
+        $this->assertSame(5830.0, $percent['compare_at_price']);
+        $this->assertSame(10.0, $percent['disc1_rate']);
+    }
+
     public function test_cloud_create_sales_order_and_find_invoice(): void
     {
         config([

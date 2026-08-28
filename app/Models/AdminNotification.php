@@ -19,6 +19,10 @@ class AdminNotification extends Model
 
     public const TYPE_ORDER_DELIVERED = 'order_delivered';
 
+    public const TYPE_ORDER_REFUNDED = 'order_refunded';
+
+    public const TYPE_ORDER_REFUND_REQUESTED = 'order_refund_requested';
+
     public const TYPE_CUSTOMER_CREATED = 'customer_created';
 
     public const TYPE_PRODUCT_CREATED = 'product_created';
@@ -66,6 +70,8 @@ class AdminNotification extends Model
             self::TYPE_ORDER_PREPARING => 'Hazırlanıyor',
             self::TYPE_ORDER_SHIPPED => 'Kargoya verildi',
             self::TYPE_ORDER_DELIVERED => 'Teslim edildi',
+            self::TYPE_ORDER_REFUNDED => 'Sipariş iadesi',
+            self::TYPE_ORDER_REFUND_REQUESTED => 'İade talebi',
             self::TYPE_CUSTOMER_CREATED => 'Yeni müşteri',
             self::TYPE_PRODUCT_CREATED => 'Yeni ürün',
             self::TYPE_PRODUCT_UPDATED => 'Ürün güncellendi',
@@ -85,6 +91,8 @@ class AdminNotification extends Model
             self::TYPE_ORDER_PREPARING => 'bi-hourglass-split',
             self::TYPE_ORDER_SHIPPED => 'bi-truck',
             self::TYPE_ORDER_DELIVERED => 'bi-check2-circle',
+            self::TYPE_ORDER_REFUNDED => 'bi-arrow-counterclockwise',
+            self::TYPE_ORDER_REFUND_REQUESTED => 'bi-arrow-return-left',
             self::TYPE_CUSTOMER_CREATED => 'bi-person-plus',
             self::TYPE_PRODUCT_CREATED => 'bi-box-seam',
             self::TYPE_PRODUCT_UPDATED => 'bi-arrow-repeat',

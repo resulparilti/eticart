@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SyncActivity;
 use App\Services\LogRetentionService;
+use App\Services\SyncActivityTracker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,8 @@ class SyncActivityController extends Controller
     public function live(Request $request): JsonResponse
     {
         $limit = min(20, max(5, (int) $request->integer('limit', 12)));
+
+        SyncActivity::expireStale();
 
         $activities = SyncActivity::query()
             ->whereNull('dismissed_at')
@@ -74,6 +77,43 @@ class SyncActivityController extends Controller
             'uuid' => $activity->uuid,
             'message' => 'İşlem izleyiciden kaldırıldı. Geçmiş menüsünden görüntüleyebilirsiniz.',
         ]);
+    }
+
+    /**
+     * Bekleyen, çalışan veya takılı kalmış işlemi iptal eder.
+     */
+    public function cancel(Request $request, string $uuid): JsonResponse|RedirectResponse
+    {
+        $activity = SyncActivity::query()->where('uuid', $uuid)->firstOrFail();
+
+        if (! $activity->isActive()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Bu işlem zaten bitmiş; iptal edilemez.',
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->with('error', 'Bu işlem zaten bitmiş; iptal edilemez.');
+        }
+
+        $tracker = app(SyncActivityTracker::class);
+        $tracker->bind($activity);
+        $tracker->cancel('Kullanıcı tarafından iptal edildi.');
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'uuid' => $activity->uuid,
+                'message' => 'İşlem iptal edildi.',
+            ]);
+        }
+
+        return redirect()
+            ->back()
+            ->with('success', 'İşlem iptal edildi.');
     }
 
     /**

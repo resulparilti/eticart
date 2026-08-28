@@ -40,6 +40,32 @@ class AppServiceProvider extends ServiceProvider
             // Settings tablosu henüz yoksa (migrate sırasında) sessiz geç.
         }
 
+        View::composer('email.*', function ($view) {
+            $data = $view->getData();
+            $existing = is_array($data['brand'] ?? null) ? $data['brand'] : [];
+
+            try {
+                $defaults = app(MailConfigService::class)->branding();
+            } catch (\Throwable) {
+                $defaults = [
+                    'name' => "O'renne",
+                    'header_bg' => '#000000',
+                    'header_text' => '#ffffff',
+                    'body_text' => '#142433',
+                    'muted_text' => '#5b6b7c',
+                    'link' => '#c45c26',
+                    'button_bg' => '#000000',
+                    'button_text' => '#ffffff',
+                    'logo_path' => null,
+                    'logo_url' => null,
+                    'site_url' => '',
+                    'account_url' => '',
+                ];
+            }
+
+            $view->with('brand', array_merge($defaults, $existing));
+        });
+
         View::composer(['layouts.app', 'layouts.guest', 'components.sidebar'], function ($view) {
             $view->with('appBrandName', Setting::appName());
         });

@@ -83,7 +83,7 @@ class ShopifyProduct extends Model
                 'sku' => $variant['sku'] ?? null,
                 'price' => (float) ($variant['price'] ?? 0),
                 'compare_at_price' => isset($variant['compare_at_price']) ? (float) $variant['compare_at_price'] : null,
-                'stock' => (int) ($variant['stock'] ?? 0),
+                'stock' => (int) ($variant['inventory_quantity'] ?? $variant['stock'] ?? 0),
                 'barcode' => $variant['barcode'] ?? null,
                 'inventory_item_id' => $variant['inventory_item_id'] ?? null,
                 'image' => $variant['image'] ?? $variant['image_url'] ?? null,

@@ -18,6 +18,8 @@ final class StatusLabels
             'partial' => 'Kısmen karşılandı',
             'fulfilled' => 'Kargoya verildi',
             'delivered' => 'Kargo teslim edildi',
+            'refunded' => 'İade edildi',
+            'partially_refunded' => 'Kısmen iade',
             'restocked' => 'Stoğa iade',
             'cancelled' => 'İptal',
             'null' => 'Sipariş alındı',
@@ -93,7 +95,7 @@ final class StatusLabels
             'preparing' => 'info',
             'received', 'null' => 'secondary',
             'partial' => 'warning',
-            'cancelled', 'restocked' => 'danger',
+            'cancelled', 'restocked', 'refunded', 'partially_refunded' => 'danger',
             default => 'secondary',
         };
     }

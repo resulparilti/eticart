@@ -20,7 +20,7 @@
                 <label class="form-label">Durum</label>
                 <select name="status" class="form-select">
                     <option value="">Tümü</option>
-                    @foreach (['queued' => 'Bekliyor', 'running' => 'Çalışıyor', 'completed' => 'Tamam', 'partial' => 'Kısmi', 'failed' => 'Hata'] as $value => $label)
+                    @foreach (['queued' => 'Bekliyor', 'running' => 'Çalışıyor', 'completed' => 'Tamam', 'partial' => 'Kısmi', 'failed' => 'Hata', 'cancelled' => 'İptal'] as $value => $label)
                         <option value="{{ $value }}" @selected($status === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
@@ -86,8 +86,15 @@
                         <td class="small">{{ \Illuminate\Support\Str::limit($activity->message, 60) }}</td>
                         <td class="small">{{ optional($activity->started_at)->format('d.m.Y H:i') ?: '—' }}</td>
                         <td class="small">{{ optional($activity->finished_at)->format('d.m.Y H:i') ?: '—' }}</td>
-                        <td>
+                        <td class="text-nowrap">
                             <a href="{{ route('sync-history.show', $activity->uuid) }}" class="btn btn-sm btn-outline-primary">Detay</a>
+                            @if ($activity->isActive())
+                                <form method="POST" action="{{ route('sync-activities.cancel', $activity->uuid) }}" class="d-inline"
+                                      onsubmit="return confirm('Bu işlem iptal edilsin mi? Takılı kalan aktarımlar da buradan kapatılır.');">
+                                    @csrf
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">İptal et</button>
+                                </form>
+                            @endif
                         </td>
                     </tr>
                 @endforeach

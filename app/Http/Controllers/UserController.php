@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
@@ -59,7 +59,7 @@ class UserController extends Controller
         return view('users.form', [
             'user' => new User(['is_active' => true]),
             'roles' => Role::query()->orderBy('name')->get(),
-            'permissions' => Permission::query()->orderBy('name')->get(),
+            'permissionModules' => PermissionCatalog::modules(),
             'selectedRole' => 'viewer',
             'selectedPermissions' => [],
             'mode' => 'create',
@@ -87,6 +87,9 @@ class UserController extends Controller
         ]);
 
         $user->syncRoles([$validated['role']]);
+        foreach ($validated['permissions'] ?? [] as $name) {
+            Permission::findOrCreate($name, 'web');
+        }
         $user->syncPermissions($validated['permissions'] ?? []);
 
         return redirect()
@@ -104,9 +107,9 @@ class UserController extends Controller
         return view('users.form', [
             'user' => $user,
             'roles' => Role::query()->orderBy('name')->get(),
-            'permissions' => Permission::query()->orderBy('name')->get(),
+            'permissionModules' => PermissionCatalog::modules(),
             'selectedRole' => $user->roles->first()?->name ?? 'viewer',
-            'selectedPermissions' => $user->permissions->pluck('name')->all(),
+            'selectedPermissions' => $user->getAllPermissions()->pluck('name')->all(),
             'mode' => 'edit',
             'breadcrumbs' => [
                 ['label' => 'Anasayfa', 'url' => route('dashboard')],
@@ -135,6 +138,9 @@ class UserController extends Controller
 
         $user->update($payload);
         $user->syncRoles([$validated['role']]);
+        foreach ($validated['permissions'] ?? [] as $name) {
+            Permission::findOrCreate($name, 'web');
+        }
         $user->syncPermissions($validated['permissions'] ?? []);
 
         return redirect()
@@ -183,6 +189,30 @@ class UserController extends Controller
     }
 
     /**
+     * Soft-delete user; activity logs keep name/email snapshots.
+     */
+    public function destroy(User $user): RedirectResponse
+    {
+        if ($user->id === auth()->id()) {
+            return back()->with('error', 'Kendi hesabınızı silemezsiniz.');
+        }
+
+        if ($user->hasRole('admin') && User::role('admin')->count() <= 1) {
+            return back()->with('error', 'Son yönetici silinemez.');
+        }
+
+        $user->update([
+            'is_active' => false,
+            'email' => sprintf('deleted.%d.%s', $user->id, $user->email),
+        ]);
+        $user->delete();
+
+        return redirect()
+            ->route('users.index')
+            ->with('success', 'Kullanıcı silindi. İşlem kayıtları ad soyad ile duruyor.');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function validatedData(Request $request, ?User $user): array
@@ -193,7 +223,7 @@ class UserController extends Controller
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($user?->id),
+                Rule::unique('users', 'email')->ignore($user?->id)->whereNull('deleted_at'),
             ],
             'password' => [
                 $user ? 'nullable' : 'required',
@@ -202,7 +232,7 @@ class UserController extends Controller
             ],
             'role' => ['required', 'string', Rule::exists('roles', 'name')],
             'permissions' => ['nullable', 'array'],
-            'permissions.*' => ['string', Rule::exists('permissions', 'name')],
+            'permissions.*' => ['string', Rule::in(PermissionCatalog::allPermissionNames())],
             'is_active' => ['nullable', 'boolean'],
         ]);
     }

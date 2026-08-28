@@ -108,7 +108,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Başlık rengi</label>
-                            <input type="color" name="mail_header_bg" class="form-control form-control-color w-100" value="{{ old('mail_header_bg', $settings['mail_header_bg'] ?? '#0f2a3d') }}">
+                            <input type="color" name="mail_header_bg" class="form-control form-control-color w-100" value="{{ old('mail_header_bg', $settings['mail_header_bg'] ?? '#000000') }}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Başlık yazı rengi</label>
@@ -128,7 +128,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Buton rengi</label>
-                            <input type="color" name="mail_button_bg" class="form-control form-control-color w-100" value="{{ old('mail_button_bg', $settings['mail_button_bg'] ?? '#0f2a3d') }}">
+                            <input type="color" name="mail_button_bg" class="form-control form-control-color w-100" value="{{ old('mail_button_bg', $settings['mail_button_bg'] ?? '#000000') }}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Buton yazı rengi</label>

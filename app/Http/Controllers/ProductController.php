@@ -283,27 +283,22 @@ class ProductController extends Controller
                 'sync_options.*' => ['string', 'in:all,info,images,stock,price'],
             ]);
 
-            try {
-                $result = $this->productSyncService->syncToShopify(
-                    $validated['product_ids'],
-                    $validated['sync_options'] ?? [ProductSyncService::OPTION_ALL]
-                );
+            $ids = array_values(array_unique(array_map('intval', $validated['product_ids'])));
+            $options = $validated['sync_options'] ?? [ProductSyncService::OPTION_ALL];
+            $uuid = $this->queueBulkProductAction(
+                'push_shopify',
+                'shopify_push',
+                'Shopify aktarım ('.count($ids).' ürün)',
+                $ids,
+                $options,
+                count($ids),
+                ['product_ids' => $ids, 'source' => 'products.sync-to-shopify']
+            );
 
-                return redirect()
-                    ->route('products.sync-to-shopify')
-                    ->with('success', $result['message'])
-                    ->with('sync_results', $result['results']);
-            } catch (ShopifyException $e) {
-                return redirect()
-                    ->route('products.sync-to-shopify')
-                    ->with('error', $e->getMessage());
-            } catch (\Throwable $e) {
-                report($e);
-
-                return redirect()
-                    ->route('products.sync-to-shopify')
-                    ->with('error', 'Shopify senkronizasyonu sırasında hata oluştu.');
-            }
+            return redirect()
+                ->route('products.sync-to-shopify')
+                ->with('success', 'Shopify aktarımı kuyruğa alındı. İlerlemeyi işlem izleyiciden takip edebilirsiniz.')
+                ->with('sync_activity_uuid', $uuid);
         }
 
         $selectedIds = array_filter(array_map('intval', (array) $request->input('product_ids', [])));
@@ -398,6 +393,10 @@ class ProductController extends Controller
             'variant_image_urls' => ['nullable', 'array', 'max:50'],
             'variant_image_urls.*' => ['nullable', 'string', 'max:2000'],
             'variant_image_remove' => ['nullable', 'array', 'max:50'],
+            'variant_prices' => ['nullable', 'array', 'max:50'],
+            'variant_prices.*' => ['nullable', 'numeric', 'min:0'],
+            'variant_stocks' => ['nullable', 'array', 'max:50'],
+            'variant_stocks.*' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             'push_to_shopify' => ['nullable', 'boolean'],
             'sync_options' => ['nullable', 'array'],
@@ -428,10 +427,15 @@ class ProductController extends Controller
 
         $variantInfo = $product->variant_info;
         $variantImageChanged = false;
+        $variantPriceOrStockChanged = false;
+        $originalPrice = $validated['original_price'];
+        $stock = $validated['stock'];
         if (is_array($variantInfo) && is_array($variantInfo['variants'] ?? null)) {
             $files = $request->file('variant_image_files', []);
             $urls = $request->input('variant_image_urls', []);
             $remove = $request->input('variant_image_remove', []);
+            $prices = $request->input('variant_prices', []);
+            $stocks = $request->input('variant_stocks', []);
 
             foreach ($variantInfo['variants'] as $index => $variant) {
                 if (! is_array($variant)) {
@@ -459,6 +463,47 @@ class ProductController extends Controller
                 }
 
                 $variantInfo['variants'][$index]['image'] = $nextImage !== '' ? $nextImage : null;
+
+                if (is_array($prices) && array_key_exists($index, $prices) && $prices[$index] !== null && $prices[$index] !== '') {
+                    $nextPrice = round((float) $prices[$index], 2);
+                    if ((float) ($variant['price'] ?? 0) !== $nextPrice) {
+                        $variantPriceOrStockChanged = true;
+                    }
+                    $variantInfo['variants'][$index]['price'] = $nextPrice;
+                }
+
+                if (is_array($stocks) && array_key_exists($index, $stocks) && $stocks[$index] !== null && $stocks[$index] !== '') {
+                    $nextStock = (int) $stocks[$index];
+                    if ((int) ($variant['stock'] ?? 0) !== $nextStock) {
+                        $variantPriceOrStockChanged = true;
+                    }
+                    $variantInfo['variants'][$index]['stock'] = $nextStock;
+                }
+            }
+
+            if ($request->exists('variant_prices') || $request->exists('variant_stocks')) {
+                $sumStock = 0;
+                $minPrice = null;
+                foreach ($variantInfo['variants'] as $variant) {
+                    if (! is_array($variant)) {
+                        continue;
+                    }
+                    $sumStock += (int) ($variant['stock'] ?? 0);
+                    if (! isset($variant['price']) || $variant['price'] === '' || $variant['price'] === null) {
+                        continue;
+                    }
+                    $price = (float) $variant['price'];
+                    if ($minPrice === null || $price < $minPrice) {
+                        $minPrice = $price;
+                    }
+                }
+
+                if ($request->exists('variant_stocks')) {
+                    $stock = $sumStock;
+                }
+                if ($request->exists('variant_prices') && $minPrice !== null) {
+                    $originalPrice = $minPrice;
+                }
             }
         }
 
@@ -467,8 +512,8 @@ class ProductController extends Controller
             'sku' => $validated['sku'] ?? null,
             'barcode' => $validated['barcode'] ?? null,
             'description' => $validated['description'] ?? null,
-            'original_price' => $validated['original_price'],
-            'stock' => $validated['stock'],
+            'original_price' => $originalPrice,
+            'stock' => $stock,
             'images' => $images,
             'variant_info' => $variantInfo,
             'is_active' => $request->boolean('is_active'),
@@ -490,13 +535,29 @@ class ProductController extends Controller
                     && ! in_array(ProductSyncService::OPTION_IMAGES, $options, true)) {
                     $options[] = ProductSyncService::OPTION_IMAGES;
                 }
+                if ($variantPriceOrStockChanged && ! in_array(ProductSyncService::OPTION_ALL, $options, true)) {
+                    if (! in_array(ProductSyncService::OPTION_PRICE, $options, true)) {
+                        $options[] = ProductSyncService::OPTION_PRICE;
+                    }
+                    if (! in_array(ProductSyncService::OPTION_STOCK, $options, true)) {
+                        $options[] = ProductSyncService::OPTION_STOCK;
+                    }
+                }
 
-                $result = $this->productSyncService->syncToShopify([$product->id], $options);
+                $uuid = $this->queueBulkProductAction(
+                    'push_shopify',
+                    'shopify_push',
+                    ($product->sku ?: $product->title).' Shopify aktarım',
+                    [$product->id],
+                    $options,
+                    1,
+                    ['product_id' => $product->id, 'source' => 'products.update']
+                );
 
                 return redirect()
                     ->route('products.show', $product)
-                    ->with('success', $message.' '.$result['message'])
-                    ->with('sync_results', $result['results']);
+                    ->with('success', $message.' Shopify aktarımı kuyruğa alındı.')
+                    ->with('sync_activity_uuid', $uuid);
             } catch (ShopifyException $e) {
                 return redirect()
                     ->route('products.show', $product)
@@ -547,19 +608,25 @@ class ProductController extends Controller
             'sync_options.*' => ['string', 'in:all,info,images,stock,price'],
         ]);
 
-        try {
-            $result = $this->productSyncService->syncToShopify(
-                [$product->id],
-                $validated['sync_options'] ?? [ProductSyncService::OPTION_ALL]
-            );
-
-            return redirect()
-                ->route('products.show', $product)
-                ->with('success', $result['message'])
-                ->with('sync_results', $result['results']);
-        } catch (ShopifyException $e) {
-            return back()->with('error', $e->getMessage());
+        if (! $product->is_active) {
+            return back()->with('warning', 'Pasif ürün Shopify’a gönderilmez. Önce aktifleştirin.');
         }
+
+        $options = $validated['sync_options'] ?? [ProductSyncService::OPTION_ALL];
+        $uuid = $this->queueBulkProductAction(
+            'push_shopify',
+            'shopify_push',
+            ($product->sku ?: $product->title).' Shopify aktarım',
+            [$product->id],
+            $options,
+            1,
+            ['product_id' => $product->id, 'source' => 'products.push-shopify']
+        );
+
+        return redirect()
+            ->route('products.show', $product)
+            ->with('success', 'Shopify aktarımı kuyruğa alındı. İlerlemeyi işlem izleyiciden takip edebilirsiniz.')
+            ->with('sync_activity_uuid', $uuid);
     }
 
     /**
@@ -790,7 +857,7 @@ class ProductController extends Controller
             $options,
             $activity->id,
             Auth::id()
-        );
+        )->onConnection('database');
 
         return $activity->uuid;
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Exceptions\SyncActivityCancelledException;
 use App\Models\SyncActivity;
 use App\Services\ProductSyncService;
 use App\Services\SyncActivityTracker;
@@ -49,6 +50,8 @@ class ProcessBulkProductAction implements ShouldQueue
         $tracker->bind($activity);
 
         try {
+            $tracker->abortIfCancelled();
+
             match ($this->action) {
                 'reconcile' => $this->runReconcile($sync, $tracker),
                 'pull_shopify' => $this->runPull($sync, $tracker),
@@ -56,6 +59,8 @@ class ProcessBulkProductAction implements ShouldQueue
                 'activate', 'deactivate' => $this->runStatus($sync, $tracker),
                 default => $tracker->fail('Bilinmeyen toplu işlem: '.$this->action),
             };
+        } catch (SyncActivityCancelledException) {
+            return;
         } catch (Throwable $e) {
             report($e);
             $tracker->fail($e->getMessage(), $e);
@@ -72,7 +77,7 @@ class ProcessBulkProductAction implements ShouldQueue
         ]);
 
         $activity = SyncActivity::query()->find($this->activityId);
-        if (! $activity || ! $activity->isActive()) {
+        if (! $activity || $activity->isCancelled() || ! $activity->isActive()) {
             return;
         }
 

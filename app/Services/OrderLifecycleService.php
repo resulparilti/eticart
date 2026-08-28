@@ -156,7 +156,7 @@ class OrderLifecycleService
     /**
      * Lokal durum / fatura / kargo bilgilerini Shopify sipariş detayına yazar.
      *
-     * @return array{success: bool, skipped: bool, actions: array<int, string>, message: string}
+     * @return array{success: bool, skipped: bool, not_found: bool, actions: array<int, string>, message: string}
      */
     public function syncLocalStateToShopify(ShopifyOrder $order, bool $startActivity = true): array
     {
@@ -182,6 +182,7 @@ class OrderLifecycleService
             return [
                 'success' => false,
                 'skipped' => true,
+                'not_found' => false,
                 'actions' => [],
                 'message' => $message,
             ];
@@ -220,6 +221,9 @@ class OrderLifecycleService
                     );
                 }
             } catch (Throwable $e) {
+                    if ($this->shopifyService->isNotFound($e)) {
+                        throw $e;
+                    }
                     $fulfillError = $e->getMessage();
                     $this->activityTracker->log('error', $order->order_number.' Shopify fulfillment: '.$fulfillError);
                     Log::channel('stack')->warning('Shopify fulfillment push failed', [
@@ -235,6 +239,9 @@ class OrderLifecycleService
                     );
                     $actions[] = (string) ($reverted['action'] ?? 'revert');
                 } catch (Throwable $e) {
+                    if ($this->shopifyService->isNotFound($e)) {
+                        throw $e;
+                    }
                     $fulfillError = $e->getMessage();
                     $this->activityTracker->log('error', $order->order_number.' Shopify durum geri alma: '.$fulfillError);
                     Log::channel('stack')->warning('Shopify fulfillment revert failed', [
@@ -288,10 +295,27 @@ class OrderLifecycleService
             return [
                 'success' => $ok,
                 'skipped' => false,
+                'not_found' => false,
                 'actions' => $actions,
                 'message' => $message,
             ];
         } catch (Throwable $e) {
+            if ($this->shopifyService->isNotFound($e)) {
+                $message = $order->order_number.' Shopify’da bulunamadı (silinmiş olabilir).';
+                $this->activityTracker->log('warning', $message);
+                if ($ownActivity) {
+                    $this->activityTracker->complete($message, 0, 0, ['not_found' => true]);
+                }
+
+                return [
+                    'success' => false,
+                    'skipped' => false,
+                    'not_found' => true,
+                    'actions' => $actions,
+                    'message' => $message,
+                ];
+            }
+
             $order->update(['shopify_needs_push' => true]);
             $message = $order->order_number.' Shopify güncellemesi başarısız: '.$e->getMessage();
             $this->activityTracker->log('error', $message);
@@ -307,6 +331,7 @@ class OrderLifecycleService
             return [
                 'success' => false,
                 'skipped' => false,
+                'not_found' => false,
                 'actions' => $actions,
                 'message' => $message,
             ];
@@ -325,6 +350,7 @@ class OrderLifecycleService
             'note' => (string) ($order->notes ?? ''),
             'add_tags' => ['EtiCart'],
             'remove_tags' => [],
+            'payment_label' => StatusLabels::payment($order->payment_status),
         ];
 
         if ($status === 'preparing') {

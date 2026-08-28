@@ -18,15 +18,7 @@ class RolePermissionSeeder extends Seeder
     {
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
-        $permissions = [
-            'users.manage',
-            'settings.manage',
-            'orders.manage',
-            'products.manage',
-            'shipments.manage',
-            'notifications.manage',
-            'reports.view',
-        ];
+        $permissions = \App\Support\PermissionCatalog::allPermissionNames();
 
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
@@ -37,15 +29,25 @@ class RolePermissionSeeder extends Seeder
         $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);
 
         $admin->syncPermissions($permissions);
-        $manager->syncPermissions([
-            'orders.manage',
-            'products.manage',
-            'shipments.manage',
-            'notifications.manage',
-            'reports.view',
-        ]);
-        $viewer->syncPermissions([
-            'reports.view',
-        ]);
+
+        $managerPerms = [];
+        foreach (['orders', 'products', 'customers', 'shipments', 'invoices', 'alerts', 'messages', 'reports', 'sync', 'logs'] as $module) {
+            foreach (['view', 'create', 'update'] as $action) {
+                $name = $module.'.'.$action;
+                if (in_array($name, $permissions, true)) {
+                    $managerPerms[] = $name;
+                }
+            }
+        }
+        $manager->syncPermissions($managerPerms);
+
+        $viewerPerms = [];
+        foreach (['orders', 'products', 'customers', 'shipments', 'invoices', 'alerts', 'reports', 'sync'] as $module) {
+            $name = $module.'.view';
+            if (in_array($name, $permissions, true)) {
+                $viewerPerms[] = $name;
+            }
+        }
+        $viewer->syncPermissions($viewerPerms);
     }
 }

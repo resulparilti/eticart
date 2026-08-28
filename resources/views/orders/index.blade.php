@@ -8,7 +8,13 @@
             <h1 class="h3 mb-1">Siparişler</h1>
             <p class="eticart-muted mb-0">Shopify siparişlerini görüntüleyin, kargoya gönderin ve barkod yazdırın.</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ route('orders.archives.index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-archive me-1"></i> Silinenler
+                @if (($archiveCount ?? 0) > 0)
+                    <span class="badge text-bg-secondary ms-1">{{ $archiveCount }}</span>
+                @endif
+            </a>
             @if (! $isConfigured)
                 <span class="badge text-bg-warning align-self-center">Shopify ayarları eksik</span>
             @endif

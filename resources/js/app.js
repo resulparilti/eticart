@@ -141,6 +141,7 @@ window.eticartSyncMonitor = function eticartSyncMonitor() {
         liveUrl: '',
         showUrlTemplate: '',
         dismissUrlTemplate: '',
+        cancelUrlTemplate: '',
         dismissFinishedUrl: '',
         historyUrl: '',
 
@@ -149,6 +150,7 @@ window.eticartSyncMonitor = function eticartSyncMonitor() {
             this.liveUrl = root?.dataset.liveUrl || '';
             this.showUrlTemplate = root?.dataset.showUrlTemplate || '';
             this.dismissUrlTemplate = root?.dataset.dismissUrlTemplate || '';
+            this.cancelUrlTemplate = root?.dataset.cancelUrlTemplate || '';
             this.dismissFinishedUrl = root?.dataset.dismissFinishedUrl || '';
             this.historyUrl = root?.dataset.historyUrl || '';
             const bootUuid = root?.dataset.bootUuid || '';
@@ -230,6 +232,7 @@ window.eticartSyncMonitor = function eticartSyncMonitor() {
                 completed: 'Tamam',
                 partial: 'Kısmi',
                 failed: 'Hata',
+                cancelled: 'İptal',
             })[status] || status;
         },
 
@@ -240,6 +243,7 @@ window.eticartSyncMonitor = function eticartSyncMonitor() {
                 completed: 'text-bg-success',
                 partial: 'text-bg-warning',
                 failed: 'text-bg-danger',
+                cancelled: 'text-bg-secondary',
             })[status] || 'text-bg-light';
         },
 
@@ -277,6 +281,33 @@ window.eticartSyncMonitor = function eticartSyncMonitor() {
                 });
             } catch (e) {
                 // ignore transient errors
+            }
+        },
+
+        async cancelOne(uuid) {
+            if (!uuid || !this.cancelUrlTemplate || this.dismissing) return;
+            if (!window.confirm('Bu işlem iptal edilsin mi? Takılı kalan aktarım da kapanır.')) {
+                return;
+            }
+            this.dismissing = true;
+            const seq = ++this.refreshSeq;
+            try {
+                const url = this.cancelUrlTemplate.replace('__UUID__', uuid);
+                await window.ajaxRequest(url, { method: 'POST', body: JSON.stringify({}) });
+                this.activities = this.activities.filter((a) => a.uuid !== uuid);
+                if (this.selectedUuid === uuid) {
+                    this.clearSelection();
+                }
+                if (window.showToast) {
+                    window.showToast('İşlem iptal edildi.', 'success');
+                }
+                await this.refresh(seq);
+            } catch (e) {
+                if (window.showToast) {
+                    window.showToast('İşlem iptal edilemedi.', 'danger');
+                }
+            } finally {
+                this.dismissing = false;
             }
         },
 
@@ -811,57 +842,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-Alpine.data('productMedia', (gallery = []) => ({
-    showThumbs: false,
-    lightboxIndex: -1,
-    gallery: Array.isArray(gallery) ? gallery.filter((url) => typeof url === 'string' && url.trim() !== '') : [],
-    get lightbox() {
-        if (this.lightboxIndex < 0) {
-            return null;
-        }
+window.productMedia = function productMedia(gallery = []) {
+    return {
+        showThumbs: false,
+        lightboxIndex: -1,
+        gallery: Array.isArray(gallery) ? gallery.filter((url) => typeof url === 'string' && url.trim() !== '') : [],
+        get lightbox() {
+            if (this.lightboxIndex < 0) {
+                return null;
+            }
 
-        return this.gallery[this.lightboxIndex] || null;
-    },
-    get lightboxCount() {
-        return this.gallery.length;
-    },
-    openLightbox(url) {
-        const src = typeof url === 'string' ? url.trim() : '';
-        if (src === '') {
-            return;
-        }
-        let index = this.gallery.indexOf(src);
-        if (index < 0) {
-            this.gallery.push(src);
-            index = this.gallery.length - 1;
-        }
-        this.lightboxIndex = index;
-        document.body.style.overflow = 'hidden';
-    },
-    closeLightbox() {
-        this.lightboxIndex = -1;
-        document.body.style.overflow = '';
-    },
-    prevLightbox() {
-        if (this.lightboxIndex < 0 || this.gallery.length < 2) {
-            return;
-        }
-        this.lightboxIndex = (this.lightboxIndex - 1 + this.gallery.length) % this.gallery.length;
-    },
-    nextLightbox() {
-        if (this.lightboxIndex < 0 || this.gallery.length < 2) {
-            return;
-        }
-        this.lightboxIndex = (this.lightboxIndex + 1) % this.gallery.length;
-    },
-    scrollThumbs(direction) {
-        const track = this.$refs.thumbTrack;
-        if (!track) {
-            return;
-        }
-        const step = Math.max(88, Math.floor(track.clientWidth * 0.7));
-        track.scrollBy({ left: direction * step, behavior: 'smooth' });
-    },
-}));
+            return this.gallery[this.lightboxIndex] || null;
+        },
+        get lightboxCount() {
+            return this.gallery.length;
+        },
+        openLightbox(url) {
+            const src = typeof url === 'string' ? url.trim() : '';
+            if (src === '') {
+                return;
+            }
+            let index = this.gallery.indexOf(src);
+            if (index < 0) {
+                this.gallery.push(src);
+                index = this.gallery.length - 1;
+            }
+            this.lightboxIndex = index;
+            document.body.style.overflow = 'hidden';
+        },
+        closeLightbox() {
+            this.lightboxIndex = -1;
+            document.body.style.overflow = '';
+        },
+        prevLightbox() {
+            if (this.lightboxIndex < 0 || this.gallery.length < 2) {
+                return;
+            }
+            this.lightboxIndex = (this.lightboxIndex - 1 + this.gallery.length) % this.gallery.length;
+        },
+        nextLightbox() {
+            if (this.lightboxIndex < 0 || this.gallery.length < 2) {
+                return;
+            }
+            this.lightboxIndex = (this.lightboxIndex + 1) % this.gallery.length;
+        },
+        scrollThumbs(direction) {
+            const track = this.$refs.thumbTrack;
+            if (!track) {
+                return;
+            }
+            const step = Math.max(88, Math.floor(track.clientWidth * 0.7));
+            track.scrollBy({ left: direction * step, behavior: 'smooth' });
+        },
+    };
+};
+
+Alpine.data('productMedia', window.productMedia);
 
 Alpine.start();

@@ -560,6 +560,16 @@ class ProductSyncService
                     $remote = $this->shopifyService->updateProduct($shopifyId, $updatePayload);
                 }
 
+                if ($shopifyId && in_array(self::OPTION_INFO, $options, true)) {
+                    $details = $remote ?: $this->shopifyService->getProductDetails($shopifyId);
+                    $this->reconcileShopifyVariants(
+                        $product,
+                        (string) $shopifyId,
+                        is_array($details['variants'] ?? null) ? $details['variants'] : []
+                    );
+                    $remote = $this->shopifyService->getProductDetails($shopifyId);
+                }
+
                 if (($isCreate || in_array(self::OPTION_IMAGES, $options, true)) && $shopifyId) {
                     $remote = $remote ?: $this->shopifyService->getProductDetails($shopifyId);
                     $this->attachShopifyVariantImages($product, $remote);
@@ -567,11 +577,15 @@ class ProductSyncService
                 }
             }
 
-            if ($shopifyId && (in_array(self::OPTION_PRICE, $options, true) || in_array(self::OPTION_STOCK, $options, true))) {
+            if ($shopifyId && (
+                in_array(self::OPTION_PRICE, $options, true)
+                || in_array(self::OPTION_STOCK, $options, true)
+                || in_array(self::OPTION_INFO, $options, true)
+            )) {
                 $details = $remote ?: $this->shopifyService->getProductDetails($shopifyId);
                 $remoteVariants = is_array($details['variants'] ?? null) ? $details['variants'] : [];
                 $this->syncShopifyVariantPriceAndStock($product, $remoteVariants, $options);
-                $remote = $details;
+                $remote = $this->shopifyService->getProductDetails($shopifyId);
             }
 
             if (! $remote && $shopifyId) {
@@ -916,12 +930,14 @@ class ProductSyncService
     private function buildShopifyVariantPayload(UyumSoftProduct $product, bool $includeInventoryQty): array
     {
         $rows = $product->variantRows();
-        $groups = $product->attributeGroups();
 
         if ($rows === []) {
             $variant = [
                 'price' => (string) $product->original_price,
-                'sku' => $product->sku ?: $product->uyumsoft_id,
+                'sku' => $this->shopifyVariantSku([
+                    'barcode' => $product->barcode,
+                    'sku' => $product->sku,
+                ], $product),
                 'inventory_management' => 'shopify',
             ];
             if ($product->barcode) {
@@ -935,18 +951,16 @@ class ProductSyncService
         }
 
         $payload = [];
-        if ($groups !== []) {
-            $payload['options'] = array_map(static fn (array $g): array => [
-                'name' => $g['name'],
-                'values' => $g['values'],
-            ], array_slice($groups, 0, 3));
+        $optionDefinitions = $this->buildShopifyOptionDefinitions($product, $rows);
+        if ($optionDefinitions !== []) {
+            $payload['options'] = $optionDefinitions;
         }
 
         $variants = [];
         foreach ($rows as $row) {
             $variant = [
                 'price' => (string) ($row['price'] ?? $product->original_price),
-                'sku' => (string) (($row['sku'] ?? null) ?: ($product->sku ?: $product->uyumsoft_id)),
+                'sku' => $this->shopifyVariantSku($row, $product),
                 'inventory_management' => 'shopify',
             ];
             $compareAt = $this->compareAtPriceValue($row);
@@ -977,6 +991,293 @@ class ProductSyncService
     }
 
     /**
+     * Shopify option sırası variant option1/2/3 ile aynı olmalı.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array{name: string, values: array<int, string>}>
+     */
+    private function buildShopifyOptionDefinitions(UyumSoftProduct $product, array $rows): array
+    {
+        $groups = $product->attributeGroups();
+        $options = [];
+
+        foreach (['attribute_1', 'attribute_2', 'attribute_3'] as $index => $key) {
+            $values = [];
+            foreach ($rows as $row) {
+                $value = trim((string) ($row[$key] ?? ''));
+                if ($value !== '' && ! in_array($value, $values, true)) {
+                    $values[] = $value;
+                }
+            }
+            if ($values === []) {
+                continue;
+            }
+
+            $name = 'Seçenek '.($index + 1);
+            foreach ($groups as $group) {
+                $groupValues = $group['values'] ?? [];
+                if (! is_array($groupValues)) {
+                    continue;
+                }
+                if (array_intersect($values, $groupValues) !== []) {
+                    $name = (string) ($group['name'] ?? $name);
+                    break;
+                }
+            }
+
+            $options[] = [
+                'name' => $name,
+                'values' => $values,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * Mevcut Shopify ürüne eksik varyantları ekler (Default Title -> gerçek seçenekler).
+     *
+     * @param  array<int, array<string, mixed>>  $remoteVariants
+     */
+    private function reconcileShopifyVariants(UyumSoftProduct $product, string $shopifyId, array $remoteVariants): void
+    {
+        $built = $this->buildShopifyVariantPayload($product, true);
+        $locals = $built['variants'] ?? [];
+        if ($locals === []) {
+            return;
+        }
+
+        $locals = $this->adaptVariantsToRemoteOptions($locals, $remoteVariants);
+
+        $remoteCount = count($remoteVariants);
+        $needsReconcile = count($locals) > $remoteCount
+            || (count($locals) > 1 && $this->remoteLooksLikeSingleDefault($remoteVariants));
+
+        if (! $needsReconcile) {
+            return;
+        }
+
+        $options = $built['options'] ?? [];
+        if ($options !== [] && $this->remoteOptionCount($remoteVariants) >= 2) {
+            try {
+                $this->shopifyService->updateProduct($shopifyId, [
+                    'id' => $shopifyId,
+                    'options' => $options,
+                ]);
+                $fresh = $this->shopifyService->getProductDetails($shopifyId);
+                if (is_array($fresh['variants'] ?? null)) {
+                    $remoteVariants = $fresh['variants'];
+                }
+            } catch (ShopifyException $e) {
+                Log::channel('stack')->warning('Shopify option update failed', [
+                    'product_id' => $product->id,
+                    'shopify_id' => $shopifyId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $usedIds = [];
+        $created = 0;
+        $lastError = null;
+
+        foreach ($locals as $local) {
+            $match = $this->matchRemoteVariant($remoteVariants, $local)
+                ?? $this->matchRemoteVariantByOptions($remoteVariants, $local);
+
+            if ($match === null) {
+                foreach ($remoteVariants as $remote) {
+                    if (! is_array($remote)) {
+                        continue;
+                    }
+                    $remoteId = (string) ($remote['id'] ?? '');
+                    if ($remoteId === '' || isset($usedIds[$remoteId])) {
+                        continue;
+                    }
+                    if ($this->isDefaultTitleVariant($remote)) {
+                        $match = $remote;
+                        break;
+                    }
+                }
+            }
+
+            try {
+                if ($match !== null && isset($match['id'])) {
+                    $variantId = (string) $match['id'];
+                    $usedIds[$variantId] = true;
+                    $update = $local;
+                    unset($update['inventory_quantity']);
+                    $update['id'] = $variantId;
+                    $updated = $this->shopifyService->updateProductVariant($variantId, $update);
+                    foreach ($remoteVariants as $index => $remote) {
+                        if ((string) ($remote['id'] ?? '') === $variantId) {
+                            $remoteVariants[$index] = array_merge($remote, $update, $updated);
+                        }
+                    }
+                    $this->writeShopifyInventory(
+                        $product,
+                        $updated !== [] ? array_merge($match, $updated) : $match,
+                        (int) ($local['inventory_quantity'] ?? 0)
+                    );
+                    usleep(400_000);
+
+                    continue;
+                }
+
+                $createdPayload = $local;
+                unset($createdPayload['inventory_quantity']);
+                $createdVariant = $this->shopifyService->createProductVariant($shopifyId, $createdPayload);
+                if (! empty($createdVariant['id'])) {
+                    $usedIds[(string) $createdVariant['id']] = true;
+                    $remoteVariants[] = $createdVariant;
+                    $created++;
+                    usleep(500_000);
+                    $this->writeShopifyInventory(
+                        $product,
+                        $createdVariant,
+                        (int) ($local['inventory_quantity'] ?? 0)
+                    );
+                }
+                usleep(400_000);
+            } catch (ShopifyException $e) {
+                $lastError = $e;
+                Log::channel('stack')->error('Shopify variant reconcile failed', [
+                    'product_id' => $product->id,
+                    'shopify_id' => $shopifyId,
+                    'sku' => $local['sku'] ?? null,
+                    'barcode' => $local['barcode'] ?? null,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($created === 0 && count($locals) > count($usedIds) && $lastError instanceof ShopifyException) {
+            throw $lastError;
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $remoteVariants
+     */
+    private function remoteLooksLikeSingleDefault(array $remoteVariants): bool
+    {
+        return count($remoteVariants) === 1 && $this->isDefaultTitleVariant($remoteVariants[0] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $remote
+     */
+    private function isDefaultTitleVariant(array $remote): bool
+    {
+        $title = trim((string) ($remote['title'] ?? ''));
+        $option1 = trim((string) ($remote['option1'] ?? ''));
+
+        return $title === 'Default Title' || $option1 === 'Default Title';
+    }
+
+    /**
+     * Tek seçenekli (Default Title) Shopify ürüne option2 göndermek 422 verir.
+     * Benzersiz özelliği option1 yap.
+     *
+     * @param  array<int, array<string, mixed>>  $locals
+     * @param  array<int, array<string, mixed>>  $remoteVariants
+     * @return array<int, array<string, mixed>>
+     */
+    private function adaptVariantsToRemoteOptions(array $locals, array $remoteVariants): array
+    {
+        if ($this->remoteOptionCount($remoteVariants) >= 2) {
+            return $locals;
+        }
+
+        $option1Unique = $this->uniqueOptionCount($locals, 'option1') > 1;
+        if ($option1Unique) {
+            return array_map(static function (array $local): array {
+                unset($local['option2'], $local['option3']);
+
+                return $local;
+            }, $locals);
+        }
+
+        return array_map(static function (array $local): array {
+            if (! empty($local['option2'])) {
+                $local['option1'] = $local['option2'];
+            } elseif (! empty($local['option3'])) {
+                $local['option1'] = $local['option3'];
+            }
+            unset($local['option2'], $local['option3']);
+
+            return $local;
+        }, $locals);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $locals
+     */
+    private function uniqueOptionCount(array $locals, string $key): int
+    {
+        $values = [];
+        foreach ($locals as $local) {
+            $value = trim((string) ($local[$key] ?? ''));
+            if ($value !== '') {
+                $values[$value] = true;
+            }
+        }
+
+        return count($values);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $remoteVariants
+     */
+    private function remoteOptionCount(array $remoteVariants): int
+    {
+        $max = 1;
+        foreach ($remoteVariants as $remote) {
+            if (! is_array($remote)) {
+                continue;
+            }
+            if (trim((string) ($remote['option3'] ?? '')) !== '') {
+                $max = max($max, 3);
+            } elseif (trim((string) ($remote['option2'] ?? '')) !== '') {
+                $max = max($max, 2);
+            }
+        }
+
+        return $max;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $remoteVariants
+     * @param  array<string, mixed>  $local
+     * @return array<string, mixed>|null
+     */
+    private function matchRemoteVariantByOptions(array $remoteVariants, array $local): ?array
+    {
+        $option1 = (string) ($local['option1'] ?? '');
+        if ($option1 === '') {
+            return null;
+        }
+
+        $option2 = (string) ($local['option2'] ?? '');
+        $option3 = (string) ($local['option3'] ?? '');
+
+        foreach ($remoteVariants as $remote) {
+            if (! is_array($remote)) {
+                continue;
+            }
+            if (
+                (string) ($remote['option1'] ?? '') === $option1
+                && (string) ($remote['option2'] ?? '') === $option2
+                && (string) ($remote['option3'] ?? '') === $option3
+            ) {
+                return $remote;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Match Shopify variants by barcode/sku and update price/stock.
      *
      * @param  array<int, array<string, mixed>>  $remoteVariants
@@ -990,46 +1291,59 @@ class ProductSyncService
             $inventoryItemId = $product->shopifyProduct?->inventory_item_id;
             $first = $remoteVariants[0] ?? [];
             $variantId = $variantId ?: (isset($first['id']) ? (string) $first['id'] : null);
-            $inventoryItemId = $inventoryItemId ?: (isset($first['inventory_item_id']) ? (string) $first['inventory_item_id'] : null);
 
-            if ($variantId && in_array(self::OPTION_PRICE, $options, true)) {
-                $this->shopifyService->updateProductVariant($variantId, [
+            if ($variantId && (
+                in_array(self::OPTION_PRICE, $options, true)
+                || in_array(self::OPTION_INFO, $options, true)
+            )) {
+                $payload = [
                     'id' => $variantId,
-                    'price' => (string) $product->original_price,
-                    'sku' => $product->sku ?: $product->uyumsoft_id,
-                ]);
-            }
-            if ($inventoryItemId && in_array(self::OPTION_STOCK, $options, true)) {
-                try {
-                    $this->shopifyService->updateInventory($inventoryItemId, (int) $product->stock);
-                } catch (ShopifyException $e) {
-                    Log::channel('stack')->warning('Inventory update failed', [
-                        'product_id' => $product->id,
-                        'message' => $e->getMessage(),
-                    ]);
+                    'sku' => $this->shopifyVariantSku([
+                        'barcode' => $product->barcode,
+                        'sku' => $product->sku,
+                    ], $product),
+                ];
+                if (in_array(self::OPTION_PRICE, $options, true)) {
+                    $payload['price'] = (string) $product->original_price;
                 }
+                if ($product->barcode) {
+                    $payload['barcode'] = (string) $product->barcode;
+                }
+                $this->shopifyService->updateProductVariant($variantId, $payload);
+            }
+            if (in_array(self::OPTION_STOCK, $options, true)) {
+                $this->writeShopifyInventory($product, $first !== [] ? $first : [
+                    'id' => $variantId,
+                    'inventory_item_id' => $inventoryItemId,
+                ], (int) $product->stock);
             }
 
             return;
         }
 
         foreach ($localRows as $local) {
-            $match = $this->matchRemoteVariant($remoteVariants, $local);
+            $match = $this->matchLocalVariantToRemote($remoteVariants, $local, $product);
             if ($match === null) {
+                $this->activityTracker->log(
+                    'warning',
+                    ($product->sku ?: $product->title).' varyant stoğu eşleşmedi: '.($local['sku'] ?? $local['title'] ?? 'varyant')
+                );
                 continue;
             }
 
             $variantId = isset($match['id']) ? (string) $match['id'] : null;
-            $inventoryItemId = isset($match['inventory_item_id']) ? (string) $match['inventory_item_id'] : null;
 
-            if ($variantId && in_array(self::OPTION_PRICE, $options, true)) {
+            if ($variantId && (
+                in_array(self::OPTION_PRICE, $options, true)
+                || in_array(self::OPTION_INFO, $options, true)
+            )) {
                 $payload = [
                     'id' => $variantId,
-                    'price' => (string) ($local['price'] ?? $product->original_price),
-                    'compare_at_price' => $this->compareAtPriceValue($local),
+                    'sku' => $this->shopifyVariantSku($local, $product),
                 ];
-                if (! empty($local['sku'])) {
-                    $payload['sku'] = (string) $local['sku'];
+                if (in_array(self::OPTION_PRICE, $options, true)) {
+                    $payload['price'] = (string) ($local['price'] ?? $product->original_price);
+                    $payload['compare_at_price'] = $this->compareAtPriceValue($local);
                 }
                 if (! empty($local['barcode'])) {
                     $payload['barcode'] = (string) $local['barcode'];
@@ -1037,16 +1351,99 @@ class ProductSyncService
                 $this->shopifyService->updateProductVariant($variantId, $payload);
             }
 
-            if ($inventoryItemId && in_array(self::OPTION_STOCK, $options, true)) {
-                try {
-                    $this->shopifyService->updateInventory($inventoryItemId, (int) ($local['stock'] ?? 0));
-                } catch (ShopifyException $e) {
-                    Log::channel('stack')->warning('Variant inventory update failed', [
-                        'product_id' => $product->id,
-                        'sku' => $local['sku'] ?? null,
-                        'message' => $e->getMessage(),
-                    ]);
-                }
+            if (in_array(self::OPTION_STOCK, $options, true)) {
+                $this->writeShopifyInventory($product, $match, $this->variantStockQuantity($local));
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $remoteVariants
+     * @param  array<string, mixed>  $local
+     * @return array<string, mixed>|null
+     */
+    private function matchLocalVariantToRemote(array $remoteVariants, array $local, UyumSoftProduct $product): ?array
+    {
+        $enriched = [
+            'sku' => $this->shopifyVariantSku($local, $product),
+            'barcode' => $local['barcode'] ?? $local['barkod'] ?? null,
+            'option1' => $local['attribute_1'] ?? $local['option1'] ?? '',
+            'option2' => $local['attribute_2'] ?? $local['option2'] ?? '',
+            'option3' => $local['attribute_3'] ?? $local['option3'] ?? '',
+        ];
+
+        $adapted = $this->adaptVariantsToRemoteOptions([$enriched], $remoteVariants)[0] ?? $enriched;
+
+        return $this->matchRemoteVariant($remoteVariants, $adapted)
+            ?? $this->matchRemoteVariant($remoteVariants, $local)
+            ?? $this->matchRemoteVariantByOptions($remoteVariants, $adapted);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function variantStockQuantity(array $row): int
+    {
+        $raw = $row['stock'] ?? $row['quantity'] ?? $row['qty'] ?? $row['inventory_quantity'] ?? null;
+        if ($raw === null || $raw === '' || $raw === '-') {
+            return 0;
+        }
+
+        return max(0, (int) $raw);
+    }
+
+    /**
+     * Shopify REST variant inventory_quantity yazmaz; Inventory API gerekir.
+     *
+     * @param  array<string, mixed>  $remoteVariant
+     */
+    private function writeShopifyInventory(UyumSoftProduct $product, array $remoteVariant, int $quantity): void
+    {
+        $inventoryItemId = isset($remoteVariant['inventory_item_id'])
+            ? (string) $remoteVariant['inventory_item_id']
+            : '';
+        $variantId = isset($remoteVariant['id']) ? (string) $remoteVariant['id'] : '';
+
+        if ($inventoryItemId === '' && $variantId !== '') {
+            try {
+                $fresh = $this->shopifyService->getProductVariant($variantId);
+                $inventoryItemId = isset($fresh['inventory_item_id']) ? (string) $fresh['inventory_item_id'] : '';
+            } catch (ShopifyException $e) {
+                Log::channel('stack')->warning('Variant inventory item okunamadı', [
+                    'product_id' => $product->id,
+                    'variant_id' => $variantId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($inventoryItemId === '') {
+            $this->activityTracker->log(
+                'warning',
+                ($product->sku ?: $product->title).': Shopify inventory_item_id yok, stok yazılamadı.'
+            );
+
+            return;
+        }
+
+        try {
+            $this->shopifyService->updateInventory($inventoryItemId, $quantity);
+        } catch (ShopifyException $e) {
+            usleep(500_000);
+            try {
+                $this->shopifyService->updateInventory($inventoryItemId, $quantity);
+            } catch (ShopifyException $retry) {
+                $this->activityTracker->log(
+                    'error',
+                    ($product->sku ?: $product->title).' stok yazılamadı: '.$retry->getMessage()
+                );
+                Log::channel('stack')->warning('Variant inventory update failed', [
+                    'product_id' => $product->id,
+                    'sku' => $remoteVariant['sku'] ?? null,
+                    'inventory_item_id' => $inventoryItemId,
+                    'quantity' => $quantity,
+                    'message' => $retry->getMessage(),
+                ]);
             }
         }
     }
@@ -1065,7 +1462,8 @@ class ProductSyncService
             if (! is_array($remote)) {
                 continue;
             }
-            if ($barcode !== '' && (string) ($remote['barcode'] ?? '') === $barcode) {
+            $remoteBarcode = (string) ($remote['barcode'] ?? '');
+            if ($barcode !== '' && $remoteBarcode === $barcode) {
                 return $remote;
             }
         }
@@ -1074,12 +1472,41 @@ class ProductSyncService
             if (! is_array($remote)) {
                 continue;
             }
-            if ($sku !== '' && (string) ($remote['sku'] ?? '') === $sku) {
+            $remoteSku = (string) ($remote['sku'] ?? '');
+            if ($barcode !== '' && $remoteSku === $barcode) {
+                return $remote;
+            }
+            if ($sku !== '' && $remoteSku === $sku) {
                 return $remote;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Shopify varyant SKU alanı barkoddur; yoksa yerel stok koduna düşer.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function shopifyVariantSku(array $row, UyumSoftProduct $product): string
+    {
+        $barcode = trim((string) ($row['barcode'] ?? ''));
+        if ($barcode !== '') {
+            return $barcode;
+        }
+
+        $sku = trim((string) ($row['sku'] ?? ''));
+        if ($sku !== '') {
+            return $sku;
+        }
+
+        $productBarcode = trim((string) ($product->barcode ?? ''));
+        if ($productBarcode !== '') {
+            return $productBarcode;
+        }
+
+        return (string) ($product->sku ?: $product->uyumsoft_id);
     }
 
     /**

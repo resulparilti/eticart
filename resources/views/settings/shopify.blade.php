@@ -18,7 +18,13 @@
             <strong>Fulfilled / Kargoya verildi</strong> yapmak için fulfillment izinleri şarttır.
             İzin eklendikten sonra <strong>eski token çalışmaz</strong> — yeni Access Token üretilmelidir.
         </p>
-        @if ($scopeError)
+        @if (! $shopifyConfigured)
+            <div class="alert alert-danger small mb-3">
+                Access token kayıtlı değil. Dev Dashboard’da kapsam eklemek yetmez;
+                Shopify uygulamasını <strong>yeniden bağlayıp izin vermeniz</strong> gerekir.
+                Eski token 401 sonrası silindiği için senkron durur.
+            </div>
+        @elseif ($scopeError)
             <div class="alert alert-warning small">Yetki listesi okunamadı: {{ $scopeError }}</div>
         @elseif ($missingFulfillmentScopes === [])
             <div class="alert alert-success small mb-3">Fulfillment izinleri bu token’da tanımlı.</div>
@@ -29,6 +35,13 @@
                     <code class="me-1">{{ $scope }}</code>
                 @endforeach
             </div>
+        @endif
+        @if ($oauthConfigured && filled($settings['shopify_store_url'] ?? null))
+            <form method="POST" action="{{ route('settings.shopify.reconnect') }}" class="mb-3">
+                @csrf
+                <button type="submit" class="btn btn-primary">Shopify’ı yeniden bağla</button>
+                <span class="small eticart-muted ms-2">Shopify izin ekranı açılır; onaylayınca yeni token kaydedilir.</span>
+            </form>
         @endif
         @if ($grantedScopes !== [])
             <p class="small mb-2">Token’daki mevcut izinler:</p>
@@ -52,7 +65,7 @@
             <li>Mağazada uygulamayı <strong>kaldırıp tekrar yükleyin</strong> veya EtiCart’tan OAuth’u yeniden başlatın. Sürüm yayınlamak eski token’ı güncellemez.</li>
         </ol>
         <p class="small eticart-muted mb-2">Kapsamlar kutusuna yapıştırılacak liste:</p>
-        <textarea class="form-control form-control-sm mb-3" rows="3" readonly onclick="this.select()">read_orders,write_orders,read_customers,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders</textarea>
+        <textarea class="form-control form-control-sm mb-3" rows="3" readonly onclick="this.select()">{{ \App\Services\ShopifyOAuthService::DEFAULT_SCOPES }}</textarea>
 
         <h3 class="h6">Mağaza içi “Uygulama geliştir” (eski custom app)</h3>
         <ol class="small mb-0">
@@ -110,7 +123,7 @@
             </div>
             <div class="mb-3">
                 <label class="form-label">Client secret</label>
-                <input type="password" name="shopify_api_secret" class="form-control" value="{{ old('shopify_api_secret', $settings['shopify_api_secret'] ?? '') }}">
+                <input type="password" name="shopify_api_secret" class="form-control" value="" autocomplete="new-password" placeholder="{{ filled($settings['shopify_api_secret'] ?? null) ? 'Kayıtlı — değiştirmek için yazın' : 'Client secret' }}">
             </div>
             <div class="mb-4">
                 <label class="form-label">OAuth kapsamları</label>
@@ -124,7 +137,7 @@
             </div>
             <div class="mb-3">
                 <label class="form-label">Access Token</label>
-                <input type="password" name="shopify_access_token" class="form-control" value="{{ old('shopify_access_token', $settings['shopify_access_token'] ?? '') }}">
+                <input type="password" name="shopify_access_token" class="form-control" value="" autocomplete="new-password" placeholder="{{ filled($settings['shopify_access_token'] ?? null) ? 'Kayıtlı — değiştirmek için yazın' : 'Access Token' }}">
             </div>
             <div class="mb-3">
                 <label class="form-label">API Version</label>

@@ -19,6 +19,8 @@ class AdminNotificationService
         AdminNotification::TYPE_ORDER_PREPARING,
         AdminNotification::TYPE_ORDER_SHIPPED,
         AdminNotification::TYPE_ORDER_DELIVERED,
+        AdminNotification::TYPE_ORDER_REFUNDED,
+        AdminNotification::TYPE_ORDER_REFUND_REQUESTED,
         AdminNotification::TYPE_CUSTOMER_CREATED,
         AdminNotification::TYPE_PRODUCT_CREATED,
     ];

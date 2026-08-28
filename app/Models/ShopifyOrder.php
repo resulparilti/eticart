@@ -42,6 +42,7 @@ class ShopifyOrder extends Model
         'invoice_token',
         'shopify_created_at',
         'synced_at',
+        'shopify_content_hash',
         'shopify_needs_push',
         'shopify_pushed_at',
         'uyumsoft_order_id',
@@ -50,6 +51,9 @@ class ShopifyOrder extends Model
         'uyumsoft_einvoice_uuid',
         'uyumsoft_pushed_at',
         'uyumsoft_last_error',
+        'uyumsoft_content_hash',
+        'uyumsoft_needs_update',
+        'uyumsoft_invoice_locked',
     ];
 
     /**
@@ -64,6 +68,8 @@ class ShopifyOrder extends Model
         'shopify_needs_push' => 'boolean',
         'shopify_pushed_at' => 'datetime',
         'uyumsoft_pushed_at' => 'datetime',
+        'uyumsoft_needs_update' => 'boolean',
+        'uyumsoft_invoice_locked' => 'boolean',
     ];
 
     /**
@@ -142,6 +148,7 @@ class ShopifyOrder extends Model
     {
         return $query
             ->whereNotNull('shopify_order_id')
+            ->whereNotIn('fulfillment_status', ['refunded', 'partially_refunded', 'restocked'])
             ->where(function ($builder): void {
                 $builder->where('shopify_needs_push', true)
                     ->orWhere(function ($pending): void {
@@ -179,6 +186,75 @@ class ShopifyOrder extends Model
                 $builder->whereNull('payment_status')
                     ->orWhereNotIn('payment_status', ['refunded', 'voided']);
             });
+    }
+
+    /**
+     * UyumSoft’ta kaydı olan ve içerik güncellemesi bekleyen siparişler.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<ShopifyOrder>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<ShopifyOrder>
+     */
+    public function scopeNeedsUyumsoftUpdate($query)
+    {
+        return $query
+            ->whereNotNull('uyumsoft_order_id')
+            ->where('uyumsoft_needs_update', true)
+            ->where('uyumsoft_invoice_locked', false)
+            ->whereHas('items')
+            ->where(function ($builder): void {
+                $builder->whereNull('fulfillment_status')
+                    ->orWhereNotIn('fulfillment_status', ['cancelled', 'restocked']);
+            });
+    }
+
+    /**
+     * Shopify kaynaklı sipariş içeriğinin (kalem, tutar, adres) özeti.
+     */
+    public function contentHash(): string
+    {
+        $this->loadMissing('items');
+
+        $items = $this->items
+            ->map(static fn (ShopifyOrderItem $item): array => [
+                'sku' => (string) $item->sku,
+                'line' => (string) $item->shopify_line_item_id,
+                'qty' => (int) $item->quantity,
+                'price' => number_format((float) $item->price, 2, '.', ''),
+                'title' => (string) $item->product_title,
+            ])
+            ->sortBy('line')
+            ->values()
+            ->all();
+
+        return hash('sha256', (string) json_encode([
+            'total' => number_format((float) $this->total_price, 2, '.', ''),
+            'currency' => (string) $this->currency,
+            'email' => (string) $this->customer_email,
+            'address' => (string) $this->shipping_address,
+            'city' => (string) $this->shipping_city,
+            'items' => $items,
+            'cancelled' => in_array((string) $this->fulfillment_status, ['cancelled', 'restocked'], true),
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    public function uyumsoftInvoiceLocked(): bool
+    {
+        return $this->hasInvoice() || filled($this->uyumsoft_invoice_id);
+    }
+
+    public function needsUyumsoftContentUpdate(): bool
+    {
+        if (! filled($this->uyumsoft_order_id) || $this->uyumsoftInvoiceLocked() || $this->uyumsoft_invoice_locked) {
+            return false;
+        }
+
+        if ($this->uyumsoft_needs_update) {
+            return true;
+        }
+
+        return filled($this->shopify_content_hash)
+            && filled($this->uyumsoft_content_hash)
+            && $this->shopify_content_hash !== $this->uyumsoft_content_hash;
     }
 
     /**

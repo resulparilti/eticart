@@ -55,19 +55,39 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label d-block">İzinler</label>
-                        <div class="row g-2">
-                            @forelse ($permissions as $permission)
-                                <div class="col-md-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="permissions[]" value="{{ $permission->name }}" id="perm_{{ $permission->id }}"
-                                            @checked(in_array($permission->name, old('permissions', $selectedPermissions), true))>
-                                        <label class="form-check-label" for="perm_{{ $permission->id }}">{{ $permission->name }}</label>
-                                    </div>
-                                </div>
-                            @empty
-                                <div class="col-12"><span class="eticart-muted small">Tanımlı izin yok.</span></div>
-                            @endforelse
+                        <label class="form-label d-block">Sayfa ve işlem yetkileri</label>
+                        <p class="form-text mt-0">Rol varsayılan paket getirir; aşağıdan sayfa bazında listeleme / ekleme / düzenleme / silme işaretleyin.</p>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Sayfa</th>
+                                        @foreach (\App\Support\PermissionCatalog::ACTIONS as $action => $actionLabel)
+                                            <th class="text-center">{{ $actionLabel }}</th>
+                                        @endforeach
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($permissionModules as $module => $meta)
+                                        <tr>
+                                            <td class="fw-semibold">{{ $meta['label'] }}</td>
+                                            @foreach (\App\Support\PermissionCatalog::ACTIONS as $action => $actionLabel)
+                                                @php $permName = $module.'.'.$action; @endphp
+                                                <td class="text-center">
+                                                    @if (in_array($action, $meta['actions'], true))
+                                                        <input class="form-check-input" type="checkbox"
+                                                               name="permissions[]" value="{{ $permName }}"
+                                                               id="perm_{{ $module }}_{{ $action }}"
+                                                               @checked(in_array($permName, old('permissions', $selectedPermissions), true))>
+                                                    @else
+                                                        <span class="eticart-muted">—</span>
+                                                    @endif
+                                                </td>
+                                            @endforeach
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 

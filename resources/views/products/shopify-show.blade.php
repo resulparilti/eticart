@@ -9,7 +9,7 @@
         array_merge($images ?? [], array_column($variants ?? [], 'image') ?: [])
     ))));
 @endphp
-<div x-data='productMedia(@js($lightboxImages))'>
+<div x-data="productMedia({{ \Illuminate\Support\Js::from($lightboxImages) }})">
     <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <div>
             <h1 class="h3 mb-1">{{ $product->title }}</h1>
@@ -35,7 +35,7 @@
         <div class="col-lg-5">
             <div class="eticart-card p-3 h-100">
                 <h2 class="h6 mb-3">Galeri</h2>
-                <x-product-gallery :images="$images" :alt="$product->title" />
+                <x-product-gallery :images="$lightboxImages" :alt="$product->title" />
             </div>
         </div>
         <div class="col-lg-7">
@@ -88,7 +88,7 @@
                                 <button type="button"
                                         class="eticart-gallery__thumb p-0 border-0 bg-transparent"
                                         data-full-url="{{ $variant['image'] }}"
-                                        @click="openLightbox($event.currentTarget.getAttribute('data-full-url'))"
+                                        @click="openLightbox($el.dataset.fullUrl)"
                                         title="Büyüt">
                                     <img src="{{ \App\Support\ShopifyMetafieldFormatter::cdnWidth($variant['image'], 96) }}"
                                          alt="{{ $variant['title'] ?? 'Varyant' }}"

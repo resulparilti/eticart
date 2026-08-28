@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ShopifyException;
 use App\Services\ShopifyOAuthService;
+use App\Services\ShopifyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,7 +29,25 @@ class ShopifyAppController extends Controller
         $shop = (string) $request->input('shop', '');
 
         if ($shop !== '' && $this->oauth->isInstalledForShop($shop)) {
-            return redirect('/dashboard');
+            if (app(ShopifyService::class)->accessTokenIsValid()) {
+                return view('shopify.installed', [
+                    'shop' => $shop,
+                    'scope' => '',
+                    'panelUrl' => url('/dashboard'),
+                    'alreadyConnected' => true,
+                ]);
+            }
+
+            try {
+                return redirect()->away($this->oauth->authorizationUrl($shop));
+            } catch (ShopifyException $e) {
+                return view('shopify.app', [
+                    'urls' => $this->oauth->dashboardUrls(),
+                    'oauthConfigured' => $this->oauth->isOAuthConfigured(),
+                    'error' => 'Kayıtlı Shopify token geçersiz. Yeniden bağlanın: '.$e->getMessage(),
+                    'shop' => $shop,
+                ]);
+            }
         }
 
         if ($shop !== '') {
@@ -90,7 +109,8 @@ class ShopifyAppController extends Controller
             return view('shopify.installed', [
                 'shop' => $result['shop'],
                 'scope' => $result['scope'],
-                'panelUrl' => '/dashboard',
+                'panelUrl' => url('/dashboard'),
+                'alreadyConnected' => false,
             ]);
         } catch (ShopifyException $e) {
             return view('shopify.app', [

@@ -4,6 +4,7 @@
     data-live-url="{{ route('sync-activities.live') }}"
     data-show-url-template="{{ url('/sync-activities') }}/__UUID__"
     data-dismiss-url-template="{{ url('/sync-activities') }}/__UUID__/dismiss"
+    data-cancel-url-template="{{ url('/sync-activities') }}/__UUID__/cancel"
     data-dismiss-finished-url="{{ route('sync-activities.dismiss-finished') }}"
     data-history-url="{{ route('sync-history.index') }}"
     data-boot-uuid="{{ session('sync_activity_uuid') }}"
@@ -92,6 +93,18 @@
                             <span x-text="item.progress_current"></span>/<span x-text="item.progress_total"></span>
                             <span x-show="item.progress_percent !== null"> (<span x-text="item.progress_percent"></span>%)</span>
                         </div>
+                    </button>
+                    <button
+                        type="button"
+                        class="eticart-sync-item__dismiss is-cancel"
+                        x-show="item.can_cancel"
+                        x-cloak
+                        @click.stop="cancelOne(item.uuid)"
+                        :disabled="dismissing"
+                        title="İşlemi iptal et"
+                        aria-label="İptal"
+                    >
+                        <i class="bi bi-x-circle-fill"></i>
                     </button>
                     <button
                         type="button"

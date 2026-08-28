@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GlobalSearchController;
@@ -38,6 +39,10 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::match(['get', 'head'], '/', function (Request $request) {
+    if ($request->filled('shop') || $request->filled('hmac') || $request->filled('host')) {
+        return app(ShopifyAppController::class)->entry($request);
+    }
+
     if ($request->user()) {
         return PanelNavigation::replaceResponse($request);
     }
@@ -70,7 +75,7 @@ Route::prefix('shopify')->name('shopify.')->group(function () {
     Route::post('/webhooks/shop-redact', [ShopifyAppController::class, 'shopRedact'])->name('webhooks.shop-redact');
 });
 
-Route::middleware(['auth', 'verified', 'active'])->group(function () {
+Route::middleware(['auth', 'verified', 'active', 'module'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/search', GlobalSearchController::class)->name('search.global');
 
@@ -99,7 +104,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/calendar', [OrderCalendarController::class, 'index'])->name('calendar.index');
     Route::get('/calendar/events', [OrderCalendarController::class, 'events'])->name('calendar.events');
 
-    Route::middleware('role:admin')->prefix('users')->name('users.')->group(function () {
+    Route::prefix('users')->name('users.')->group(function () {
         Route::get('/', [UserController::class, 'index'])->name('index');
         Route::get('/create', [UserController::class, 'create'])->name('create');
         Route::post('/', [UserController::class, 'store'])->name('store');
@@ -108,7 +113,10 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('/{user}/deactivate', [UserController::class, 'deactivate'])->name('deactivate');
         Route::post('/{user}/activate', [UserController::class, 'activate'])->name('activate');
         Route::post('/{user}/reset-password', [UserController::class, 'resetPassword'])->name('reset-password');
+        Route::delete('/{user}', [UserController::class, 'destroy'])->name('destroy');
     });
+
+    Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('activity-logs.index');
 
     Route::middleware('role:admin')->prefix('admin/queue')->name('admin.queue.')->group(function () {
         Route::get('/', [QueueMonitorController::class, 'index'])->name('index');
@@ -126,6 +134,8 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         ->name('sync-activities.dismiss-finished');
     Route::post('/sync-activities/{uuid}/dismiss', [SyncActivityController::class, 'dismiss'])
         ->name('sync-activities.dismiss');
+    Route::post('/sync-activities/{uuid}/cancel', [SyncActivityController::class, 'cancel'])
+        ->name('sync-activities.cancel');
     Route::get('/sync-activities/{uuid}', [SyncActivityController::class, 'show'])
         ->name('sync-activities.show');
 
@@ -152,11 +162,13 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::post('/orders/sync', [OrderController::class, 'sync'])->name('orders.sync');
+    Route::get('/orders/archives', [OrderController::class, 'archives'])->name('orders.archives.index');
+    Route::get('/orders/archives/{archive}', [OrderController::class, 'showArchive'])->name('orders.archives.show');
     Route::post('/orders/bulk-send-cargo', [OrderController::class, 'bulkSendCargo'])->name('orders.bulk-send-cargo');
     Route::post('/orders/bulk-print-labels', [OrderController::class, 'bulkPrintLabels'])->name('orders.bulk-print-labels');
     Route::get('/orders/{order}/print-label', [OrderController::class, 'printLabel'])->name('orders.print-label');
     Route::post('/orders/{order}/sync', [OrderController::class, 'syncOne'])->name('orders.sync-one');
-    Route::post('/orders/{order}/uyumsoft-sync', [OrderController::class, 'syncUyumsoft'])->name('orders.uyumsoft-sync');
+    Route::match(['get', 'post'], '/orders/{order}/uyumsoft-sync', [OrderController::class, 'syncUyumsoft'])->name('orders.uyumsoft-sync');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
     Route::post('/orders/{order}/assign-cargo', [OrderController::class, 'assignCargo'])->name('orders.assign-cargo');
@@ -219,6 +231,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/settings/shopify', [SettingsController::class, 'shopify'])->name('settings.shopify');
     Route::put('/settings/shopify', [SettingsController::class, 'updateShopify'])->name('settings.shopify.update');
     Route::post('/settings/shopify/test', [SettingsController::class, 'testShopify'])->name('settings.shopify.test');
+    Route::post('/settings/shopify/reconnect', [SettingsController::class, 'reconnectShopify'])->name('settings.shopify.reconnect');
     Route::get('/settings/uyumsoft', [SettingsController::class, 'uyumsoft'])->name('settings.uyumsoft');
     Route::put('/settings/uyumsoft', [SettingsController::class, 'updateUyumsoft'])->name('settings.uyumsoft.update');
     Route::post('/settings/uyumsoft/test', [SettingsController::class, 'testUyumsoft'])->name('settings.uyumsoft.test');

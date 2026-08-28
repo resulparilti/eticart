@@ -11,7 +11,16 @@
                 · <x-badge :type="$activity->statusBadgeType()">{{ $activity->statusLabel() }}</x-badge>
             </p>
         </div>
-        <a href="{{ route('sync-history.index') }}" class="btn btn-outline-secondary">Geri</a>
+        <div class="d-flex gap-2">
+            @if ($activity->isActive())
+                <form method="POST" action="{{ route('sync-activities.cancel', $activity->uuid) }}"
+                      onsubmit="return confirm('Bu işlem iptal edilsin mi?');">
+                    @csrf
+                    <button type="submit" class="btn btn-outline-danger">İptal et</button>
+                </form>
+            @endif
+            <a href="{{ route('sync-history.index') }}" class="btn btn-outline-secondary">Geri</a>
+        </div>
     </div>
 
     <div class="row g-3 mb-3">

@@ -39,7 +39,7 @@ return [
         'app_url' => env('SHOPIFY_APP_URL'),
         'api_key' => env('SHOPIFY_API_KEY'),
         'api_secret' => env('SHOPIFY_API_SECRET'),
-        'scopes' => env('SHOPIFY_SCOPES', 'read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,write_orders,read_customers,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_shipping,write_shipping'),
+        'scopes' => env('SHOPIFY_SCOPES', \App\Services\ShopifyOAuthService::DEFAULT_SCOPES),
     ],
 
     'uyumsoft' => [

@@ -71,4 +71,16 @@ class Handler extends ExceptionHandler
                 ->with('error', 'Oturum süresi doldu. Lütfen tekrar giriş yapın.');
         });
     }
+
+    /**
+     * Log kanalı yazılamazsa (izin hatası) isteği 500 yapma.
+     */
+    public function report(Throwable $e): void
+    {
+        try {
+            parent::report($e);
+        } catch (Throwable) {
+            //
+        }
+    }
 }

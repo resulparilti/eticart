@@ -29,7 +29,13 @@ class Setting extends Model
                 return static::query()->pluck('value', 'key')->toArray();
             });
         } catch (\Throwable) {
-            return $default;
+            try {
+                $value = static::query()->where('key', $key)->value('value');
+
+                return $value ?? $default;
+            } catch (\Throwable) {
+                return $default;
+            }
         }
 
         return $settings[$key] ?? $default;
